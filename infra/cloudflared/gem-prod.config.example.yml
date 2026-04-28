@@ -1,0 +1,10 @@
+# Copy to /etc/cloudflared/config.yml for gem-prod cutover.
+tunnel: <GEM_TUNNEL_UUID>
+credentials-file: /etc/cloudflared/<GEM_TUNNEL_UUID>.json
+
+ingress:
+  - hostname: gem.aidanlenahan.com
+    service: http://127.0.0.1:4173
+  - hostname: api-gem.aidanlenahan.com
+    service: http://127.0.0.1:4000
+  - service: http_status:404
