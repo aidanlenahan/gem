@@ -383,7 +383,18 @@ export default function GroupManagePage() {
           <h2 className="text-2xl font-bold text-white">Manage Group</h2>
           <p className="text-gray-500 text-sm">{group.name}</p>
         </div>
-        <PageToolbar backTo={`/groups/${groupId}`} />
+        <div className="flex items-center gap-2">
+          <Link
+            to={`/groups/${groupId}/stats`}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700 border border-gray-700/60 text-gray-300 hover:text-gray-100 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            Stats
+          </Link>
+          <PageToolbar backTo={`/groups/${groupId}`} />
+        </div>
       </div>
 
       {/* Tab bar */}

@@ -84,7 +84,7 @@ All tasks — completed and pending. Completed entries from `tasks.txt` are incl
 - [ ] make sure safe for git commit and push
 - [ ] text sizing/accessibility features
 - [ ] add verbose exif metadata to uploaded media
-- [ ] add media tab to group page sorted by date
+- [ ] add media tab to group page sorted by date with same info on it in event page info button
 
 ## Later
 - [ ] waitinglist to make account
@@ -112,7 +112,7 @@ All tasks — completed and pending. Completed entries from `tasks.txt` are incl
 
 ### Groups & members
 - [ ] Member directory / search — a searchable list of all active members in a group with their avatar, name, username, and join date; accessible from GroupPage
-- [ ] Group stats page — for admins: total events, total RSVPs, most active members, storage used, top tags; all computable from existing data with no schema changes
+- [x] Group stats page — for admins: total events, total RSVPs, most active members, storage used, top tags; all computable from existing data with no schema changes — DONE 2026-05-14: GET /groups/:groupId/stats (admin-only), GroupStatsPage.tsx, linked from GroupManagePage
 - [ ] Bulk member import — admin uploads a CSV of emails; sends invite emails to each; useful for migrating an existing group
 
 ### Notifications & preferences

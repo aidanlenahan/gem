@@ -156,7 +156,7 @@ export default function Layout() {
           <div className="mb-2 space-y-0.5">
             {[
               { to: '/home', label: 'Home', end: true },
-              { to: '/changelog', label: "What's New", end: false },
+              { to: '/updates', label: 'Updates', end: false },
               { to: '/help', label: 'Help', end: false },
               { to: '/contact', label: 'Contact', end: false },
             ].map(({ to, label, end }) => (

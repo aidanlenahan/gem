@@ -1,475 +1,223 @@
 ========================================================
-TASKS.TXT — Friendgroup Feature + Bug Backlog
-Last updated: 2026-04-24
+TASKS.TXT — GEM Feature Backlog
+Last updated: 2026-05-14
 Format: [x] = done, [ ] = pending, [-] = in progress / partial
-Priority order: P1 = blocks any real user from using the app
-                P2 = core UX gaps visible to all users after launch
-                P3 = feature completeness / secondary UX
-                P4 = integrations
-                P5 = low priority / future enhancements
+
+Tasks are grouped by the release they target.
+Only [x] items that are fully done ship in that version's release notes.
 ========================================================
 
-=== TOP PRIORITY — Must Do Next ===
+=== v0.8 — In Progress ===
+Target: next cut after v0.7
 
-[x] avatar proxy endpoint — DONE 2026-04-27: Added GetObjectCommand to @aws-sdk/client-s3 import; added GET /media/proxy/* route in server.ts (avatars-only restriction, 1-yr cache, streams S3 body); added S3_PUBLIC_BASE_URL=http://localhost:4000/media/proxy to apps/api/.env and .env.example. Existing users with localhost:9000 avatar URLs will need to re-upload. API restarted.
+[ ] Long-press context menu on mobile — 300 ms long-press on a channel message shows a
+    bottom-sheet action menu (reply, pin, delete, copy text). No way to pin/delete on touch
+    currently.
 
-[x] restart API service to pick up per-user mute routes — DONE 2026-04-27: Killed old tsx watch PIDs (2560260, 2560261, 3457402) and relaunched; new API confirmed healthy on /health.
+[ ] fix window sizing on desktop — inconsistent div sizing on desktop layout
 
-=== P2: Core UX — Visible to All Users ===
+[ ] when keyboard is clicked on mobile channel: make header smaller and slide up slightly
+    toward the top screen border
 
-[ ] implement dev email
-    CONTEXT: Noted in phases.txt pre-Phase 1. Email is required for verification,
-    password reset, and notification flows. In dev, email is currently only logged
-    to console. A dev SMTP capture tool (e.g. Mailpit or MailHog) should be wired
-    to test the full auth and notification flows end-to-end without relying on a
-    live email provider.
+[ ] @mention system — parse `@username` in message content on send; resolve to userId;
+    emit in-app notification to that user with a link to the message
 
-=== P3: Feature Completeness / Secondary UX ===
+[ ] Message search — GET /groups/:groupId/channels/:channelId/messages?q= full-text search
+    (Postgres ILIKE or to_tsvector) with a search bar in the channel header
 
-[ ] dev vs prod instance — decide on deployment strategy
-    DISCUSSION — Not a code task. Points to consider:
-    - Current: single friendgroup_dev DB, local MinIO, local Redis
-    - infra/docker-compose.yml + systemd services exist for deployment
-    - Recommend: keep dev (friendgroup_dev), add prod (friendgroup_prod)
-      with separate .env.production, MinIO bucket, Redis instance
-    - Beta codes already gate access; decision needed before public push
+[ ] Member directory / search — searchable list of all active members in a group with
+    avatar, name, username, and join date; accessible from GroupPage
 
-[ ] recurring events
-    PENDING — No recurrence model in schema. Needs RRULE support
-    (rrule npm package), recurrenceRule field on Event, and UI for
-    frequency/until/count in CreateEventPage. Not needed for initial beta.
+[ ] Duplicate / copy event — button on EventPage (admin/creator only) that pre-fills
+    CreateEventPage with all fields from the current event, letting the user adjust date
+    and save as new
 
-=== P5: Low Priority / Future ===
+[ ] Event reminders — scheduleEventStartNotification is wired and queued but never called
+    on event create/update; hook it in so RSVP-yes members get a push/email N minutes
+    before start (configurable per-user: 15 min, 1 hr, 1 day)
+
+[ ] Empty-state illustrations — replace plain text "No events yet" / "No media" placeholders
+    with simple SVG spot illustrations
+
+[ ] pick and update favicon for all pages (browser tab, PWA icon, OG image)
+
+[ ] fix media upload with storage limits per user (per-user quota enforcement)
+
+[ ] fix sizing of event creation page on mobile
+
+[ ] implement dev email (Mailpit or MailHog for local SMTP capture)
+
+[x] Group stats page — GET /groups/:groupId/stats, GroupStatsPage.tsx, linked from
+    GroupManagePage. Shows total events, RSVPs, messages, photos, storage, top members,
+    top tags. Admin-only. DONE 2026-05-14.
+
+[x] Updates page (was: Changelog) — full version history at /updates, accessible from
+    sidebar and public site. API health check button inline. DONE 2026-05-14.
+
+[x] Scroll fix on marketing pages — MarketingLayout outer div changed to h-full with
+    overflow-y-auto on main, fixing the iOS keyboard lock conflict. DONE 2026-05-14.
+
+=== v0.9 — Planned ===
+
+[ ] Channel message attachments — post images directly in channel chat; reuse existing
+    upload pipeline; store with channelId instead of eventId on MediaAsset
+
+[ ] Thread replies — reply to a specific message; collapse into "3 replies" indicator;
+    schema: add parentMessageId FK on Message
+
+[ ] Bulk member import — admin uploads a CSV of emails; sends invite emails to each
+
+[ ] Customisable reminder timing — per-user setting for how far in advance event_start
+    push/email fires (15 min / 1 hr / 1 day / none); stored in UserNotificationPreference
+    with type = "event_start_offset"
+
+[ ] Digest emails — daily or weekly email summarising upcoming events the user is
+    RSVP-yes on; scheduled via BullMQ repeatable job
+
+[ ] In-app notification grouping — group consecutive notifications of the same type for
+    the same event (e.g. "5 people RSVPed to your event")
+
+[ ] Image captions — optional caption text field on MediaAsset; shown below photos in
+    the lightbox and media grid
+
+[ ] Album / media page per event — dedicated full-page view (/events/:id/media) with
+    masonry or grid layout, download-all button, sorting by date
+
+[ ] Offline queue for RSVPs — when user RSVPs while offline, queue action in localStorage
+    and replay on reconnect (extends existing useIsOnline hook)
+
+[ ] Event page map embed — when event.location is set, show embedded static map thumbnail
+    (Google Maps Static API or OpenStreetMap tile) above the links
+
+[ ] Accent colour per user — User.theme is a string so it can carry "dark:indigo" or
+    similar; render as CSS custom property on the root element
+
+[ ] Keyboard shortcut help modal — ? key opens overlay listing all keyboard shortcuts
+    (lightbox arrow nav, Escape, etc.)
+
+[ ] Waitlist — when maxAttendees reached, late RSVPs join a waitlist; promote automatically
+    when a yes-RSVP withdraws (status: "waitlist" on RSVP)
+
+[ ] Event comments / discussion thread — Message model already has an eventId FK and the
+    relation is in the schema; wire up a simple threaded comment feed on EventPage
+    (no socket needed, just paginated REST)
+
+[ ] Event check-in QR code — generate a QR code linking to a one-click RSVP-yes endpoint;
+    display on EventPage for the creator; useful for in-person check-in via phone scan
+
+[ ] isLegendary badge — flag is in schema and returned by API but only shown as a crown
+    icon; let admins toggle it on the event edit modal and surface legendary events
+    highlighted on GroupPage
+
+[ ] dev vs prod instance — separate .env.production, separate DB, Redis, and storage bucket
+
+=== Later / Stretch ===
+
+[ ] recurring events — RRULE support; needs recurrenceRule on Event + RRULE UI
+
+[ ] specify which user sent message in push/email notifications
+
+[ ] text sizing / accessibility settings per user
+
+[ ] login links security hardening (CSRF, same-site cookies review)
+
+[ ] waitlist to make account (public landing page signup form)
+
+[ ] demo mode — not logged in, temporary session for first-time visitors
+
+[ ] add 'social' functionality — friends via invite link, global username search,
+    mutual groups
 
 [ ] verify account via alternative channel (WhatsApp, Telegram, SMS)
-    PENDING — Low priority until core email verify is done. Options:
-    WhatsApp Business API (paid), Telegram bot (free), SMS via Twilio.
-    Design decision needed before any implementation.
 
-========================================================
-Completed
-========================================================
+[ ] Google Calendar note — URL subscription shows feed as "Other calendars" sidebar
+    in Google Calendar (by-design behavior for all external URL subscriptions).
+    Consider adding a UI note so users understand this is expected.
 
-=== Merged completed items from todo.txt (2026-05-07) ===
+=== Done (historical, merged from previous backlog) ===
 
-[x] group channels — DONE 2026-05-06: General channel auto-created on group creation and
-    backfilled for all existing groups (migration 20260506120000_channel_tags_and_general).
-    Manual channel creation restricted to admins. Tags assignable to channels so any user
-    subscribed to a tag also receives notifications for that channel. ChannelPage, server.ts,
-    GroupPage sidebar.
+[x] avatar proxy endpoint — DONE 2026-04-27: Added GET /media/proxy/* route in server.ts
+    (avatars-only restriction, 1-yr cache, streams S3 body); added S3_PUBLIC_BASE_URL.
+
+[x] restart API service to pick up per-user mute routes — DONE 2026-04-27
+
+[x] group channels — DONE 2026-05-06: General channel auto-created on group creation.
+    Channel tabs, subscriptions, real-time chat via Socket.IO.
 
 [x] Phase 7 manual device matrix — DONE: iOS Safari, Android Chrome, desktop installability,
-    push UX validation, and PWA install flows verified. Also covers Phase 11 cross-browser
-    installability and push UX validation.
+    push notifications, and calendar clients validated on real devices.
 
-[x] add google maps API key into env for location autocomplete in event creation page
-    DONE: GOOGLE_MAPS_API_KEY wired into apps/api/.env and .env.example; used by the
-    Google Places autocomplete in CreateEventPage.
+[x] add google maps API key + address autocompletion in event creation page — DONE 2026-05-06
 
-[x] add google maps address/location autocompletion in event creation page
-    DONE: CreateEventPage location field uses Google Places Autocomplete to suggest and
-    resolve addresses. Separate from the map-link feature on the event detail page.
+[x] when click calendar button in events, switch to pop-up modal — DONE 2026-05-06
 
-[x] when click calendar button in events, switch to pop-up modal (not a new page)
-    [x] make calendar subscription link per-user; removed the regen link feature
-    [x] mini calendar settings section (per-user):
-        [x] select which tags are shown on the calendar feed
-        [x] OR filter to only RSVP Yes / Maybe events
-        [x] OR show all events
-        [x] settings stored per user, not per group or globally
-        [x] fix preferences to ACTUALLY update the live calendar feed (logic bug fixed)
+[x] add view controls on event page (grid, list) — DONE
 
-[x] add view controls on event page (grid, list, etc.)
-    DONE: EventPage now supports toggling between grid and list layouts for the attendee/media view.
+[x] notifications pop-up modal: no scroll wheel — DONE
 
-[x] 'Authorization token expired' error — more detailed message
-    DONE: Error now shows a human-readable explanation, instructions to log out and back in,
-    and an inline logout button beneath the message.
+[x] update all email notifications to have accurate links — DONE
 
-[x] notifications pop-up modal: no scroll wheel
-    DONE: Modal now only renders as many notification rows as fit in the viewport without
-    triggering overflow; no scrollbar appears on the modal.
+[x] add changing member roles (demote/promote) to audit log — DONE
 
-=== Merged completed items from todo.md and todo.txt (2026-05-06) ===
+[x] add enable push notifications pop-up if notis are not enabled — DONE
 
-[x] update all email notifications to have accurate links
-[x] add changing member roles (demote/promote) to audit log in settings; add other things as well as export functionality
-[x] add enable push notifications pop up if notis are not enabled
-[x] get rid of event chat
-[x] fully implement notifications page
-    [x] put 'open in full screen' button in header of Notifications modal to open notifications in its own page
-    [x] 5 most recent notifications on the notification modal
-    [x] add in-app column for notifications in the notifications section of settings, all on by default when create account
-[x] add PWA install guide
-[x] add enable push notification reminder on PWA if notis not installed
-[x] refine notis for everything on noti list besides new event create
-[x] question mark glyph, works on desktop
-    [x] make sure works on PWA
-    [x] add tabs in modal: one for website, one for iOS PWA, and one for Android PWA
-        [x] iOS PWA instructions: go to settings > notifications > GEM > Allow notifications
-        [x] Android PWA instructions: open Chrome ⋮ > Settings > Site settings > Notifications > find GEM > Allow
-[x] on private events, mark event as private with a lock glyph; ensure private event checkbox works; private event does not notify everyone; inviting someone does not auto-make it private
-[x] make sure no one gets notified for anything tied to past events
-[x] on private events, display list of users who were invited
-[x] add get notified feature on event start for RSVP yes events
-[x] put X next to each invited user on 'invite users' modal for admins, owners, and event creator
-[x] account creation code invite link in developer panel; devs can decide when link expires or expire it on click
-    [x] add functionality for account creation via invite link page via ?ref= in URL
-[x] on user account pages, add the month along with the year joined
-[x] get magic link for account creation verification to work (via email) [untested — needs deploy verification]
+[x] get rid of event chat — DONE
 
-=== Merged completed items from todo.md and todo.txt ===
+[x] fully implement notifications page — DONE
 
-[x] Fix `trustProxy`: changed `true` → `1` in `apps/api/src/server.ts` — trusts exactly one upstream hop (cloudflared), not unlimited
-[x] Fix media proxy: added bucket name validation against `S3_BUCKET` env var in `/media/proxy/*` route — prevents cross-bucket access
-[x] Fix `.env.example`: updated `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` to match `docker-compose.yml` MinIO credentials (`gemstorage` / `bdfc664...`)
-[x] Move `docker-compose.yml` credentials to env-file variables or replace with obvious placeholders — DONE 2026-04-28: replaced `POSTGRES_PASSWORD`, `MINIO_ROOT_USER`, and `MINIO_ROOT_PASSWORD` in `infra/docker-compose.yml` with env-variable interpolation placeholders (`${...}`), and updated env examples in `apps/api/.env.example`, `infra/friendgroup-api.env.example`, and `infra/gem-api.env.example`.
-[x] denote admins with badge glyph in members page — DONE 2026-04-26: GroupPage members rows now show minimal role glyphs (shield for admin, crown for owner, user for member) in the old mute slot, and mute moved into the overflow actions menu.
-[x] {"error":"No Authorization was found in request.headers","code":"FST_JWT_NO_AUTHORIZATION_IN_HEADER"} when i try to download .ics for event — DONE 2026-04-26: Changed Download .ics from a plain <a href> to a button that fetches with the auth Bearer token and triggers a blob download. EventPage.tsx.
-[x] make live subscription to calendar — DONE 2026-04-26: Per-group ICS feed subscription via secret token. Added calendarToken to Membership (migration). New routes: GET/POST/DELETE /groups/:groupId/calendar-token (auth required) and GET /calendar/group-feed/:token.ics (public, token = auth). Events filtered by user's tag subscriptions and private event access. UI: calendar icon button in GroupPage events toolbar opens a panel to generate/copy/revoke the feed URL + webcal:// deep-link. schema.prisma, server.ts, GroupPage.tsx.
-[x] when hover over initials on event page, alt text shows display name and (going), only have this logic for Yes RSVP — DONE 2026-04-26: Added title prop to Avatar component; EventPage attendees section now shows yes/maybe/no RSVPs each with "Name (going/maybe/can't go)" tooltip. Avatar.tsx, EventPage.tsx.
-[x] can we add a Good Morning, Good Evening, Hello, [name] message on the root page at the top depending on the time? have multiple phrases per time slot. — DONE 2026-04-26: Added getGreeting() to GroupsPage with 4 phrases per time slot (morning/afternoon/evening/night), deterministic pick by name+hour. GroupsPage.tsx.
-[x] refine on notifications — DONE 2026-04-27: Wired rsvp_update notification fanout in POST /events/:id/rsvps (all three write paths), added GetObjectCommand import, added /media/proxy/* endpoint, set S3_PUBLIC_BASE_URL in .env. server.ts.
-    [x] notis for tags — DONE: UserTagPreference model, GET/PUT /notifications/preferences/tags, and tag subscription toggles in NotificationSettingsPage.tsx were already fully implemented.
-    [x] notis select for push and email — DONE: UserNotificationPreference model, GET/PUT /notifications/preferences, and per-channel toggle table in NotificationSettingsPage.tsx were already fully implemented. rsvp_update type added to NotificationFanoutJobData and now fired from RSVP routes.
-[x] security hardening pass (commit/codebase audit) — DONE 2026-04-28: removed JWT fallback secret and required strong AUTH_SECRET, re-enabled CSP and strict CORS allowlist, protected /metrics with admin auth, disabled /auth/dev-token in production, added JWT expirations, required calendar webhook secret, replaced Math.random beta codes with crypto random bytes, enforced invite-only channel subscriptions in Socket.IO, moved auth token to in-memory only (no localStorage token persistence), added Sentry request scrubbing, switched avatar upload ACL to private, and replaced static credentials in infra/docker-compose.yml with env-variable placeholders.
-[x] 404 error page with consistent styling — DONE 2026-04-28: Created apps/web/src/pages/NotFoundPage.tsx (centered 404, indigo accent, "Go home" link). Replaced wildcard `<Navigate to="/" replace />` in App.tsx with `<NotFoundPage />`.
-[x] fix log out on hard reset (Ctrl + shift + r) — DONE 2026-04-28: Switched authStore.ts persist storage from localStorage to sessionStorage (createJSONStorage(() => sessionStorage)). Token is now included in partialize so it survives hard refresh. Added onRehydrateStorage callback to restore inMemoryToken in api.ts on page reload.
-[x] change email display name from GEM to 'GEM (Group Event Manager)' — DONE 2026-04-28: Updated EMAIL_FROM fallback default in apps/api/src/lib/mailer.ts. Production deployments that set EMAIL_FROM env var will need to update their value.
-[x] fix push notifications honoring settings page toggles — DONE 2026-04-29: NotificationSettingsPage now syncs push subscription state on Save (auto-upsert on any enabled push channel, unsubscribe+DELETE /notifications/subscribe when all push channels are off). Added DELETE /notifications/subscribe API route and push payload url propagation for reliable deep-link handling.
-[x] move notification bell to top-right page banner — DONE 2026-04-29: Added NotificationBell into shared PageToolbar so notification access appears in the top-right toolbar area across banner-based pages.
-[x] fix PWA relaunch logout and extend session duration — DONE 2026-04-29: Added auth hydration guard (`hydrated` state + App route gating) to avoid pre-hydration redirects on standalone relaunch, and set JWT default/infra examples to 365 days via JWT_EXPIRES_IN.
-[x] group invite link breaks the session — DONE 2026-04-29: Root cause: sessionStorage is per-tab; invite links opened in a new tab had no token. Fixed by switching authStore to localStorage so auth persists across tabs.
-[x] fix logout on refresh, logs out when refresh or hard refresh — DONE 2026-04-29: Fixed by switching authStore to localStorage and ensuring session state persists across tabs.
-[x] in-app notification bell with unread badge — DONE 2026-04-29: Added notification bell icon in sidebar and mobile top bar, unread badge, dropdown list, clear-all action, and backend notification inbox routes.
-[x] fix Phase 7 debug page dev token button — DONE 2026-04-29: Added password field and fallback to POST /auth/login when dev-token endpoint returns 404.
-[x] updated all / references to /home (MarketingLayout logo/nav, NotFoundPage, Phase7/9 debug pages) — DONE 2026-04-29: Updated app routes and links to use /home.
+[x] add PWA install guide — DONE
 
-=== P0 ===
+[x] on private events, mark event as private with a lock glyph — DONE
 
-[x] user registration flow — build POST /auth/register + RegisterPage UI
-    DONE 2026-04-16 — Full registration flow implemented. See
-    tmp/chat/4-16-user-registration-flow.txt for full implementation notes.
-    Summary:
-    - DB: added passwordHash, emailVerified, emailVerificationToken to User
-      model (migration 20260416122825_add_auth_fields applied)
-    - API endpoints added to apps/api/src/server.ts:
-        POST /auth/register — firstName+lastName, email, password (8-32, rules),
-          optional betaCode. Auto-generates username (firstName+lastName, lowercase,
-          numeric suffix if taken). Creates unverified user, stores 6-digit OTP in
-          Redis (10 min TTL), sends verification email (logged to console in dev).
-          Returns { message, userId, emailSent }.
-        POST /auth/verify-email — { userId, code } → verifies OTP, sets
-          emailVerified=true, returns JWT token + user.
-        POST /auth/resend-verification — { userId } → 60-second cooldown enforced
-          via Redis TTL. Regenerates code and resends email.
-        POST /auth/login — email + password, checks emailVerified (returns 403
-          EMAIL_NOT_VERIFIED with userId if not), returns JWT on success.
-        POST /auth/request-login-code — sends OTP to email (anti-enumeration:
-          always returns 200). 60-second cooldown per user.
-        POST /auth/verify-login-code — verifies OTP, also verifies email if
-          not yet done, returns JWT token + user.
-    - Frontend pages:
-        RegisterPage.tsx — firstName (max 15), lastName (max 15), email (max 30),
-          confirm email, password (8-32, uppercase+lowercase+number required),
-          confirm password, optional beta code field. Auto-navigates to /verify-email
-          on success.
-        VerifyEmailPage.tsx — 6-digit numeric input, verify button, resend button
-          (60-second cooldown countdown timer). Reads userId from query string.
-        LoginPage.tsx — password form + "Other methods →" link that switches to
-          email-code flow (request code → enter code → sign in). Both paths
-          navigate to /groups on success.
-    - App.tsx routes: /register, /verify-email added.
-    - dev-token endpoint preserved for seeded dev users who have no password.
-    PENDING items still open in this feature area:
-    - Google SSO (noted as future work in spec)
-    - Forgot password (separate P1 task)
+[x] make sure no one gets notified for anything tied to past events — DONE
 
-[x] account registration locked behind beta code (for beta stage)
-    DONE 2026-04-16 — POST /auth/register now checks REGISTRATION_BETA_REQUIRED
-    env var and consumes a registration BetaCode atomically inside the same
-    transaction that creates the user. If required and missing/invalid → 403.
+[x] on private events, display list of users who were invited — DONE
 
-[x] group creation beta code input — add to Create Group modal UI
-    DONE 2026-04-16 — GroupsPage.tsx Create Group modal has a betaCode input
-    field with BETA_CODE_REQUIRED / INVALID_BETA_CODE error handling. Backend
-    already validated and consumed the code atomically.
+[x] add get notified feature on event start for RSVP yes events — DONE
 
-[x] forgot password functionality
-    DONE 2026-04-17 — Full implementation:
-    - PasswordResetToken DB model (migration applied)
-    - POST /auth/forgot-password — generates secure token, sends email with link
-    - POST /auth/reset-password — validates token, updates passwordHash
-    - ForgotPasswordPage.tsx at /forgot-password
-    - ResetPasswordPage.tsx at /reset-password?token=...
-    - LoginPage has "Forgot password?" link
+[x] account creation code invite link in developer panel — DONE
 
-[x] verify email functionality
-    DONE 2026-04-16 — emailVerified fields added. 6-digit OTP on registration.
-    Password login blocks unverified users (403 EMAIL_NOT_VERIFIED). Email-code
-    login auto-verifies on first use. NOTE: "verify email banner" is a non-issue
-    in practice — no login path produces a verified JWT for an unverified user.
+[x] denote admins with badge glyph in members page — DONE
 
-=== P2 ===
+[x] ICS download with auth Bearer token — DONE 2026-04-26
 
-[x] fix CSS — too dark, some text illegible
-    DONE 2026-04-16 — Audited all components. Root cause was :root CSS vars using
-    light-mode colors (#243838 text on #030712 bg). Fixed index.css to use dark
-    defaults. Fixed text-gray-600 usages in EventPage and SettingsPage that were
-    illegible (~2:1 contrast). App.css confirmed as dead code (unimported).
+[x] make live calendar subscription via secret token — DONE 2026-04-26
 
-[x] build public user profile page at /u/:username
-    DONE 2026-04-17 — Full implementation:
-    - GET /users/:username API endpoint (auth-gated, returns name/username/
-      avatarUrl/createdAt + mutualGroups list)
-    - UserProfilePage.tsx at /u/:username — shows avatar, display name,
-      @username, member-since year, and all mutual groups (linked)
-    - Route added to App.tsx
-    - Member names in GroupManagePage link to /u/:username
+[x] RSVP hover tooltip showing status — DONE 2026-04-26
 
-[x] event invites — add UI to invite specific users
-    DONE 2026-04-20 — Full invite modal in EventPage.tsx. "Invite Members"
-    button visible to event creator/admin. Modal shows already-invited members
-    (indigo chips) and uninvited active group members with individual Invite
-    buttons. Calls POST /events/:id/invites per user, refreshes list on success.
-    Invite list fetched from GET /events/:id/invites when modal opens.
+[x] Good morning/evening greeting on groups page — DONE 2026-04-26
 
-[x] username change: show time remaining when change is blocked
-    DONE 2026-04-17 — ProfilePage now parses nextAllowedAt from the 422
-    USERNAME_CHANGE_TOO_SOON response body (ApiError.data field added).
-    Shows inline red error: "Username can be changed again on April 14, 2027
-    (12 months from now)" instead of a generic toast.
+[x] security hardening pass — DONE 2026-04-28: CSP, CORS, metrics auth, JWT expiry,
+    in-memory token, crypto-random beta codes, etc.
 
-[x] profile photo — limit to one per user, overwrite previous on change
-    DONE 2026-04-20 — PATCH /users/me already handles avatar overwrite:
-    when avatarUrl changes, looks up existing avatarUrl on User, extracts
-    the S3 objectKey (paths starting with avatars/), issues DeleteObjectCommand,
-    then saves new avatarUrl. Old object silently ignored if delete fails.
-    Avatar uploads do NOT create MediaAsset rows — they're stored as a URL
-    field on User directly via /media/avatar-upload-url presigned PUT.
+[x] 404 error page — DONE 2026-04-28
 
-[x] email notifications — wire automatic dispatch on app events
-    DONE 2026-04-20 — Email path already present in notificationWorker fanout
-    (server.ts lines ~187-235). After push, checks emailPref (default true)
-    and calls sendTransactionalEmail via buildNotificationEmail if
-    isMailConfigured(). Gated on UserNotificationPreference per type+channel.
-    CTA URL updated 2026-04-20: now uses deep link to /events/:id when
-    eventId is present in the notification job data, falls back to WEB_BASE_URL.
+[x] fix logout on hard refresh — DONE 2026-04-28: switched to sessionStorage
 
-[x] owner must approve users — send email on new join request
-    DONE 2026-04-20 — POST /groups/join sends transactional email to group
-    owner (server.ts lines ~2674-2703) with HTML+text body, CTA button
-    linking to /groups/:id?tab=members. Works in dev (logged) and prod.
+[x] fix push notifications honoring settings page toggles — DONE 2026-04-29
 
-[x] invite members via formatted code (XXXX-XXXX-XXXX)
-    DONE 2026-04-17 — Invite code displayed as XXXX-XXXX-XXXX in GroupPage +
-    GroupManagePage. Join Group modal accepts formatted or raw code (dashes
-    stripped before API call). All members (not just admins) can view and
-    copy the invite code; only admins can regenerate it. Profile names in
-    the members tab are clickable links to /u/:username.
+[x] move notification bell to top-right page banner — DONE 2026-04-29
 
-=== P3 ===
+[x] fix PWA relaunch logout + extend session duration — DONE 2026-04-29
 
-[x] storage limit enforcement (per user and/or per group)
-    DONE 2026-04-20 — Added mediaMaxUserBytes constant (default 1 GB,
-    configurable via MEDIA_MAX_USER_BYTES env var). Per-user aggregate
-    check added to both POST /media/upload-url and POST /media/complete
-    (the latter re-checks at commit time). Returns 413 with code
-    USER_MEDIA_QUOTA_EXCEEDED when user's total uploaded bytes would
-    exceed the limit. Existing per-event cap (MEDIA_MAX_EVENT_BYTES,
-    default 200 MB) and per-file cap (MEDIA_MAX_FILE_BYTES, default 10 MB)
-    are unchanged.
+[x] group invite link breaks the session (new tab) — DONE 2026-04-29: switched to localStorage
 
-[x] make debug/dev pages visible in the UI
-    DONE 2026-04-17 — Developer page created at /developer (admin-only,
-    guarded by ADMIN_EMAILS env var). Accessible via sidebar button for
-    admin accounts. Contains Phase 7 + Phase 9 debug tools and config
-    management. Removed from SettingsPage.
+[x] if make invite-only channel, auto-join the creator — DONE
 
-[x] audit logs for membership and event changes
-    DONE 2026-04-20 — AuditLog model in schema (groupId, actorId, action,
-    targetUserId, meta, createdAt). 5 create calls for member_joined,
-    member_approved, member_denied, member_removed, role_changed actions.
-    GET /groups/:groupId/audit-log endpoint (admin/owner only). Collapsible
-    audit log section in GroupManagePage.tsx.
+[x] invite-only channel: show lock glyph — DONE
 
-[x] admin rights to regular users — approve/remove/manage group
-    DONE 2026-04-14/17 — Admin role system fully implemented. Admins can
-    approve/deny join requests, remove members (non-owners), regenerate
-    invite codes, and edit group info. Group management page at
-    /groups/:groupId/manage (admin+ only; destructive actions owner-only).
+[x] reply to a message in channel chat — DONE (inline quoted preview)
 
-=== P4 ===
+[x] on public pages, top right hover dropdown hangs 200ms — DONE
 
-[x] review and harden ICS / calendar sync
-    DONE 2026-04-20 — Hardened calendar.ts:
-    - CalendarEventInput type now includes endsAt and location fields
-    - DTEND uses event.endsAt when available (was always computed +2h)
-    - LOCATION: field added to VEVENT when event.location is set
-    - URL: field added to VEVENT linking to /events/:id
-    - SEQUENCE:0 field added for client update tracking
-    - RFC 5545 §3.1 line folding implemented (fold at 75 octets,
-      continuation lines prefixed with SPACE+CRLF)
-    - DESCRIPTION now omitted when empty (was emitting blank field)
-    - All three ICS routes updated to pass endsAt and location:
-      GET /events/:id/calendar.ics, GET /groups/:groupId/calendar.ics
-    - Google Calendar link also now passes endsAt and location param
-    Still not done (not feasible without testing devices):
-    - Manual real-client testing (Google, Apple Calendar, Outlook)
-    - Webhook provider wiring (Google/Apple push notifications)
+[x] Audit log CSV export — DONE
 
-=== P5 ===
+[x] EXIF metadata on uploaded photos — DONE 2026-05-14: camera, lens, focal length,
+    aperture, shutter, ISO, GPS, dimensions via exifr + image-size
 
-[x] dark mode
-    DONE 2026-04-16 — Per-user dark/light theme setting added. User.theme field
-    in DB (default 'dark'). Toggle in Settings > Appearance. Saves via PATCH
-    /users/me, reflected in auth store, applied via data-theme on <html>.
-    Tailwind v4 CSS vars remapped for light mode. Persists across logins.
-    WebKit overscroll background set explicitly in both modes.
+[x] Group Photos tab — DONE 2026-05-14: grid of all group photos, newest-first, opens
+    MediaLightbox with full EXIF panel
 
-[x] event media ratings (per-asset)
-    DONE 2026-04-23 — Per-media-asset like/unlike system:
-    - DB: MediaAssetLike model added (assetId, userId, unique constraint)
-      MediaAsset.likes relation added. Migration 20260423175521_add_mute_and_media_likes.
-    - API: GET /events/:id/media now includes likeCount and likedByMe per asset.
-      POST /media/:assetId/like toggles like (creates or deletes MediaAssetLike).
-      Validates event access via canAccessEvent before toggling.
-    - Frontend: EventMediaResponse type updated, useLikeMedia hook added to useEvents.ts.
-      EventPage media grid shows ♥ like button overlay per image with count.
+[x] GEM favicon in desktop sidebar — DONE 2026-05-14
 
-=== Archive / Early Phases ===
-
-[x] fix event page — clicking a created event showed "not found"
-    DONE 2026-04-14 — API was missing GET /events/:id (only list existed).
-    Added route with group membership + invite-only visibility filter.
-    useEvent() hook was already calling the correct URL.
-
-[x] make admin/regular user functionality
-    DONE 2026-04-14 — PATCH /groups/:groupId/members/:userId/role (owner-only).
-    useUpdateMemberRole() mutation. GroupPage shows colour-coded role badges
-    (indigo=owner, amber=admin, gray=member) and Promote/Demote buttons.
-
-[x] fine-tune permissions per user, only editable by admin/owner
-    DONE 2026-04-14 — Server-side requireRole check. Owner-only role changes;
-    admin/member cannot self-promote; owner role immutable. Frontend buttons
-    conditionally shown to owner only.
-
-[x] fix profile URL to be username; username changeable once per year max
-    DONE 2026-04-14 — Added username + usernameChangedAt to User schema.
-    PATCH /users/me validates 1-year cooldown (422 USERNAME_CHANGE_TOO_SOON
-    with nextAllowedAt) and uniqueness (409 USERNAME_TAKEN).
-    SettingsPage: @username input with live lowercase/alphanumeric sanitisation.
-    NOTE: /u/:username public profile page UI not yet built (see P2 above).
-
-[x] user profile photo upload
-    DONE 2026-04-14 — SettingsPage: avatar preview, Upload Photo button,
-    POST /media/upload-url with context:'avatar', S3 PUT, toast confirmation.
-    Old manual URL input removed. Overwrite-previous not enforced yet (see P2).
-
-[x] chat (Socket.IO event rooms)
-    DONE Phase 4 — Message persistence, pinned messages, typing indicators,
-    cursor-paginated message list, broadcast to all room subscribers.
-
-[x] user details in settings (display name, username, avatar)
-    DONE 2026-04-14 — GET /users/me returns id, email, name, username,
-    usernameChangedAt, avatarUrl, createdAt. SettingsPage exposes all fields.
-
-[x] group creation locked behind beta code (backend)
-    DONE 2026-04-14 — BetaCode model (id, code, type, usedById, usedAt).
-    POST /groups checks GROUP_CREATION_BETA_REQUIRED, validates/consumes
-    group_creation code atomically. POST /admin/beta-codes generates codes
-    (X-Admin-Secret auth). POST /beta/validate for frontend pre-check.
-    NOTE: Frontend Create Group modal has no code input yet (see P1 above).
-
-[x] message reactions/emoji
-    DONE 2026-04-14 — ReactionPicker (👍❤️😂🎉😮👎) in EventPage.
-    GET /events/:id/messages includes reactions. Grouped display with count
-    + mine highlight. Toggle off by clicking own reaction.
-
-[x] admin event deletion and user removal
-    DONE 2026-04-14 — AdminEventCard with delete (confirm-state) for
-    admins/owners. Member removal: Remove button (confirm) for owners on
-    non-owner members. Calls DELETE /groups/:groupId/members/:userId.
-
-[x] Phase 1–11 core infrastructure (see phases.txt for full phase record)
-    Foundation, events CRUD, auth middleware, chat, notifications, media
-    upload, PWA/service worker, calendar integration, testing suite,
-    polish/edge cases, frontend UX/accessibility hardening — all done.
-
-[x] get chat to work / have general chat on the group
-    DONE 2026-04-17 — Group channel chat fully implemented. Socket.IO
-    channel rooms (join:channel, leave:channel, channel:message:send,
-    channel:typing). ChannelPage UI with cursor-paginated history, typing
-    indicators, message reactions. Channels listed in GroupPage sidebar.
-    See tmp/chat/4-17-group-channel-chat.txt for full implementation log.
-
-[x] owner can remove users
-    DONE 2026-04-14/17 — DELETE /groups/:groupId/members/:userId endpoint.
-    GroupManagePage Members section: Remove button (with confirm) shown
-    for any non-owner member. Owners can also demote admins before removing.
-
-[x] fine tune notifications
-    DONE 2026-04-22 — Tag subscription UI added to NotificationSettingsPage.
-    Group selector dropdown shows user's groups; when selected, lists all group
-    tags as toggle switches. Calls PUT /notifications/preferences/tags/:tagId.
-
-[x] get uploads to work - maybe 100 pictures per person and no videos?
-    DONE 2026-04-22 — Added image-only MIME type allowlist (jpeg/png/gif/webp/avif)
-    and 100-file per-user cap to both POST /media/upload-url and POST /media/complete.
-    Returns 415 UNSUPPORTED_MEDIA_TYPE for non-images, 413 USER_MEDIA_FILE_LIMIT_EXCEEDED
-    when over 100 files.
-
-[x] get profile picture uploads to work - one per person. if new upload profile picture, it overwrites the old one
-    DONE 2026-04-22 — Added Profile section to SettingsPage.tsx with avatar preview
-    (shows initial letter if no photo) and Upload Photo button. File input restricted
-    to image/jpeg,image/png,image/gif,image/webp,image/avif; client-side 5 MB cap.
-    Upload flow: POST /media/avatar-upload-url (presigned S3 URL) → PUT to S3 →
-    PATCH /users/me with new publicUrl (server deletes old S3 object automatically).
-    Auth store updated on success so new avatar appears immediately throughout app.
-
-[x] group auto approves??? fix this
-    DONE 2026-04-22 — requireGroupMembership in authorization.ts now checks
-    membership.status !== 'active' in addition to !membership. Pending members
-    receive 403 instead of being treated as active members.
-
-[x] mute members
-    DONE 2026-04-23 — Full mute/unmute system implemented:
-    - DB: mutedUntil DateTime? added to Membership model
-      (migration 20260423175521_add_mute_and_media_likes applied)
-    - API: POST /groups/:groupId/members/:userId/mute (admin+, body: { durationHours? })
-      POST /groups/:groupId/members/:userId/unmute (admin+)
-      GET /groups/:groupId/members now returns mutedUntil per member
-    - Chat enforcement: message:send and channel:message:send in chat.ts check
-      mutedUntil > now before persisting; emits MUTED socket error if muted
-    - Frontend: useMuteMember / useUnmuteMember hooks added to useGroups.ts
-      GroupManagePage.tsx shows Mute/Unmute buttons per member (non-owner, non-self)
-      with Confirm/Cancel for Mute. Muted members show amber Unmute button.
-
-Tags
-
-[x] have any user able to create a tag (modified: owner/admin only per user request)
-    DONE 2026-04-22 — POST /groups/:groupId/tags restricted to owner/admin.
-    PATCH /groups/:groupId/tags/:tagId also restricted to owner/admin.
-    Tags management section moved from GroupPage tabs to GroupManagePage admin section.
-
-[x] have users able to add tags to their profile (to subscribe to those topics) on the profile settings page
-    DONE 2026-04-23 — Tag Subscriptions section added to SettingsPage.tsx.
-    Group selector dropdown, then toggle switches per tag (indigo = subscribed).
-    Uses existing useTagPreferences/useUpdateTagPreference hooks and
-    PUT /notifications/preferences/tags/:tagId endpoint.
-
-[x] tags add to events
-    DONE 2026-04-22 — PATCH /events/:id/tags endpoint added; any active group member
-    can set tags on an event (validated tagIds belong to same group). Tag toggle
-    UI added to EventPage for any member.
-
-[x] Google maps API for event location, so location can be opened in google maps, or maybe apple maps or waze
-    DONE 2026-04-23 — EventPage.tsx location row now shows inline links:
-    Google Maps, Apple Maps, Waze — all open in new tab using the event
-    location string as the search query. No API key required (search URLs).
-
-[x] let's do rating out of 5 stars, and show an average, trunkated at tenths place, i.e. 4.5, 3.2, 1.6, etc.
-    DONE 2026-04-22 — Moved rating from Event.rating Int? to EventRating table (per-user
-    1-5 stars). Migration 20260422121405_event_ratings applied. GET /events/:id now
-    returns avgRating (1 decimal), myRating, ratingCount. POST /events/:id/ratings
-    upserts user rating. EventPage shows 5-star UI with amber fill and running average.
+[x] Profile picture in sidebar clickable to profile page on desktop — DONE 2026-05-14

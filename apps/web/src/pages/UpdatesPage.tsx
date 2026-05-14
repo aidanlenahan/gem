@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { resolveApiBaseUrl } from '../lib/api'
 
 type ChangeType = 'new' | 'improved' | 'fixed'
 
@@ -20,15 +22,17 @@ const releases: Release[] = [
     version: '0.7',
     date: 'May 2026',
     label: 'Beta',
-    summary: 'EXIF metadata on photos, a group-wide Photos tab, and this very changelog.',
+    summary: 'EXIF metadata on photos, group-wide Photos tab, group stats for admins, and this Updates page.',
     changes: [
       { type: 'new', text: 'Photo info panel now shows verbose EXIF metadata — camera make/model, lens, focal length, aperture, shutter speed, ISO, GPS coordinates, and date taken (when available)' },
       { type: 'new', text: 'Image dimensions (width × height) stored and displayed for every uploaded photo' },
       { type: 'new', text: 'Photos tab on the Group page — browse every photo uploaded across all events in a group, sorted newest-first, in a touch-friendly grid' },
       { type: 'new', text: 'Clicking any photo in the group Photos tab opens the full lightbox with EXIF info, download, and swipe navigation' },
-      { type: 'new', text: 'This changelog page — a full history of GEM features, accessible from the sidebar and public site' },
+      { type: 'new', text: 'Group Stats page for admins — total events, RSVPs by status, messages, photos, storage used, most active members, and top tags; accessible from group management' },
+      { type: 'new', text: 'This Updates page — a full history of GEM features, accessible from the sidebar and public site; includes an API health check button' },
       { type: 'improved', text: 'GEM favicon now appears in the desktop sidebar next to the app name' },
       { type: 'improved', text: 'Profile picture in the sidebar is now a direct link to your profile page on desktop' },
+      { type: 'fixed', text: 'Public pages (Help, Contact, Updates) now scroll correctly on all devices' },
     ],
   },
   {
@@ -169,12 +173,75 @@ const badgeLabel: Record<ChangeType, string> = {
   fixed: 'Fixed',
 }
 
-export default function ChangelogPage() {
+type HealthStatus = 'idle' | 'checking' | 'ok' | 'degraded' | 'error'
+
+function ApiHealthButton() {
+  const [status, setStatus] = useState<HealthStatus>('idle')
+  const [latency, setLatency] = useState<number | null>(null)
+
+  const check = async () => {
+    setStatus('checking')
+    setLatency(null)
+    const t0 = performance.now()
+    try {
+      const res = await fetch(`${resolveApiBaseUrl()}/health`)
+      const ms = Math.round(performance.now() - t0)
+      setLatency(ms)
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setStatus(data.status === 'ok' ? 'ok' : 'degraded')
+      } else {
+        setStatus('error')
+      }
+    } catch {
+      setLatency(Math.round(performance.now() - t0))
+      setStatus('error')
+    }
+  }
+
+  const statusStyles: Record<HealthStatus, string> = {
+    idle: 'text-gray-400',
+    checking: 'text-gray-400 animate-pulse',
+    ok: 'text-emerald-400',
+    degraded: 'text-amber-400',
+    error: 'text-red-400',
+  }
+
+  const statusLabel: Record<HealthStatus, string> = {
+    idle: '',
+    checking: 'Checking…',
+    ok: `API online${latency !== null ? ` · ${latency} ms` : ''}`,
+    degraded: `API degraded${latency !== null ? ` · ${latency} ms` : ''}`,
+    error: 'API unreachable',
+  }
+
+  return (
+    <div className="flex items-center gap-2.5">
+      <button
+        onClick={check}
+        disabled={status === 'checking'}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700 border border-gray-700/60 text-gray-300 hover:text-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        API health
+      </button>
+      {status !== 'idle' && (
+        <span className={`text-xs font-medium ${statusStyles[status]}`}>
+          {statusLabel[status]}
+        </span>
+      )}
+    </div>
+  )
+}
+
+export default function UpdatesPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16">
       <div className="mb-12 text-center">
         <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-gray-100">
-          Changelog
+          Updates
         </h1>
         <p className="mt-3 text-gray-400">
           What's new in GEM.{' '}
@@ -182,6 +249,9 @@ export default function ChangelogPage() {
             Have feedback?
           </Link>
         </p>
+        <div className="mt-4 flex justify-center">
+          <ApiHealthButton />
+        </div>
       </div>
 
       <div className="relative">

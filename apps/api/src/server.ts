@@ -4202,6 +4202,92 @@ app.get("/groups/:groupId/audit-log", async (request, reply) => {
   return reply.send({ logs });
 });
 
+// GET /groups/:groupId/stats — admin-only group stats (no schema changes needed)
+app.get("/groups/:groupId/stats", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const { groupId } = request.params as { groupId: string };
+
+  const membership = await requireGroupMembership(prisma, currentUser.id, groupId);
+  requireRole(membership.role, ["owner", "admin"]);
+
+  const [
+    totalEvents,
+    rsvpCounts,
+    memberRsvpCounts,
+    eventsWithTags,
+    storageResult,
+    totalMembers,
+    totalMessages,
+  ] = await Promise.all([
+    prisma.event.count({ where: { groupId } }),
+    prisma.rSVP.groupBy({
+      by: ["status"],
+      where: { event: { groupId } },
+      _count: { _all: true },
+    }),
+    prisma.rSVP.groupBy({
+      by: ["userId"],
+      where: { event: { groupId }, status: "yes" },
+      _count: { _all: true },
+      orderBy: { _count: { userId: "desc" } },
+      take: 5,
+    }),
+    prisma.event.findMany({
+      where: { groupId },
+      select: { tags: { select: { id: true, name: true, color: true } } },
+    }),
+    prisma.mediaAsset.aggregate({
+      where: { event: { groupId } },
+      _sum: { sizeBytes: true },
+    }),
+    prisma.membership.count({ where: { groupId, status: "active" } }),
+    prisma.message.count({ where: { channel: { groupId } } }),
+  ]);
+
+  const totalMedia = await prisma.mediaAsset.count({ where: { event: { groupId } } });
+
+  // Resolve top member names
+  const topMemberIds = memberRsvpCounts.map((r) => r.userId);
+  const topMemberUsers = await prisma.user.findMany({
+    where: { id: { in: topMemberIds } },
+    select: { id: true, name: true, username: true, avatarUrl: true },
+  });
+  const topMembers = memberRsvpCounts.map((r) => {
+    const user = topMemberUsers.find((u) => u.id === r.userId);
+    return { userId: r.userId, name: user?.name ?? "Unknown", username: user?.username ?? null, avatarUrl: user?.avatarUrl ?? null, rsvpYesCount: r._count._all };
+  });
+
+  // Count tags from implicit m2m relation
+  const tagCountMap = new Map<string, { name: string; color: string | null; count: number }>();
+  for (const event of eventsWithTags) {
+    for (const tag of event.tags) {
+      const existing = tagCountMap.get(tag.id);
+      if (existing) existing.count++;
+      else tagCountMap.set(tag.id, { name: tag.name, color: tag.color, count: 1 });
+    }
+  }
+  const topTagsResolved = Array.from(tagCountMap.entries())
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 5)
+    .map(([tagId, t]) => ({ tagId, name: t.name, color: t.color, eventCount: t.count }));
+
+  const rsvpByStatus: Record<string, number> = {};
+  for (const r of rsvpCounts) {
+    rsvpByStatus[r.status] = r._count._all;
+  }
+
+  return reply.send({
+    totalEvents,
+    totalMembers,
+    totalMessages,
+    totalMedia,
+    storageBytes: storageResult._sum.sizeBytes ?? 0,
+    rsvpByStatus,
+    topMembers,
+    topTags: topTagsResolved,
+  });
+});
+
 // ============================================================================
 // User Profile Routes
 // ============================================================================
