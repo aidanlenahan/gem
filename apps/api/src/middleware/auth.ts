@@ -6,6 +6,7 @@ export type CurrentUser = {
   id: string;
   email: string;
   name: string;
+  username: string | null;
 };
 
 type JwtPayload = {
@@ -27,7 +28,7 @@ export async function requireAuth(
 
   const user = await prisma.user.findUnique({
     where: { id: payload.sub },
-    select: { id: true, email: true, name: true },
+    select: { id: true, email: true, name: true, username: true },
   });
 
   if (!user) {

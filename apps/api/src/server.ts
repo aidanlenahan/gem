@@ -153,7 +153,7 @@ const notificationWorker = new Worker<NotificationFanoutJobData>(
   async (job) => {
     const data = job.data;
 
-    if (data.type !== "event_start" && data.eventId) {
+    if (data.type !== "event_start" && data.type !== "mention" && data.eventId) {
       const evt = await prisma.event.findUnique({
         where: { id: data.eventId },
         select: { dateTime: true },
@@ -755,7 +755,7 @@ const updateUserBodySchema = z.object({
   name: z.string().min(1).max(255).optional(),
   username: z.string().min(2).max(40).regex(/^[a-zA-Z0-9_]+$/).optional(),
   avatarUrl: z.string().url().nullable().optional(),
-  theme: z.enum(["dark", "light"]).optional(),
+  theme: z.string().regex(/^(dark|light)(:(indigo|violet|sky|emerald|rose|amber))?$/).optional(),
 });
 
 const useBetaCodeBodySchema = z.object({
@@ -814,7 +814,7 @@ const channelMessagesQuerySchema = z.object({
 
 const notificationPreferencesBodySchema = z.array(
   z.object({
-    type: z.enum(["chat_message", "event_created", "event_changed", "invite", "rsvp_update", "event_start"]),
+    type: z.enum(["chat_message", "event_created", "event_changed", "invite", "rsvp_update", "event_start", "mention"]),
     channel: z.enum(["push", "email", "in_app"]),
     enabled: z.boolean(),
   })
@@ -829,7 +829,7 @@ const eventTagsBodySchema = z.object({
 });
 
 type NotificationFanoutJobData = {
-  type: "chat_message" | "event_created" | "event_changed" | "invite" | "rsvp_update" | "event_start";
+  type: "chat_message" | "event_created" | "event_changed" | "invite" | "rsvp_update" | "event_start" | "mention";
   groupId: string;
   actorUserId?: string;
   eventId?: string;
@@ -857,6 +857,27 @@ async function queueCalendarSync(
     reason,
     eventId,
   });
+}
+
+async function parseMentionedUsers(
+  content: string,
+  groupId: string,
+  excludeUserId: string
+): Promise<{ id: string; username: string }[]> {
+  const handles = [...new Set(
+    [...content.matchAll(/@([a-zA-Z0-9_.-]+)/g)].map((m) => m[1])
+  )];
+  if (handles.length === 0) return [];
+
+  const users = await prisma.user.findMany({
+    where: {
+      username: { in: handles, mode: "insensitive" },
+      memberships: { some: { groupId, status: "active" } },
+      NOT: { id: excludeUserId },
+    },
+    select: { id: true, username: true },
+  });
+  return users.filter((u): u is { id: string; username: string } => u.username !== null);
 }
 
 async function scheduleEventStartNotification(event: { id: string; groupId: string; title: string; dateTime: Date }) {
@@ -932,7 +953,7 @@ await app.register(multipart, {
   limits: {
     fileSize: MEDIA_MAX_FILE_BYTES,
     files: 1,
-    fields: 0,
+    fields: 5,  // allow caption and other small text fields alongside file uploads
   },
 });
 
@@ -2200,14 +2221,27 @@ app.post("/events/:eventId/media", { config: { rateLimit: { max: 20, timeWindow:
     return reply.status(507).send({ error: `This group's storage limit of ${formatBytes(groupLimitBytes)} has been reached.`, code: "GROUP_STORAGE_FULL" });
   }
 
-  const fileData = await request.file();
+  // Extract file and optional caption from multipart parts
+  let fileData: Awaited<ReturnType<typeof request.file>> | null = null;
+  let caption: string | undefined;
+  let originalFilename: string | undefined;
+
+  for await (const part of request.parts()) {
+    if (part.type === "file") {
+      fileData = part as any;
+      originalFilename = part.filename;
+    } else if (part.type === "field" && part.fieldname === "caption") {
+      const raw = String(part.value ?? "").trim();
+      if (raw.length > 0) caption = raw.slice(0, 280);
+    }
+  }
+
   if (!fileData) return reply.status(400).send({ error: "No file uploaded", code: "NO_FILE" });
 
   let saved;
   try {
-    // Remaining space is minimum of (global cap - used) and (group cap - group used)
     const remaining = Math.min(MEDIA_GLOBAL_MAX_BYTES - globalUsed, groupLimitBytes - groupUsed);
-    saved = await saveUploadedFile(fileData.file, `media/${eventId}`, Math.min(MEDIA_MAX_FILE_BYTES, remaining));
+    saved = await saveUploadedFile((fileData as any).file, `media/${eventId}`, Math.min(MEDIA_MAX_FILE_BYTES, remaining));
   } catch (err: any) {
     if (err.code === "FILE_TOO_LARGE") {
       return reply.status(413).send({ error: `File exceeds ${formatBytes(MEDIA_MAX_FILE_BYTES)} limit`, code: "FILE_TOO_LARGE" });
@@ -2228,12 +2262,13 @@ app.post("/events/:eventId/media", { config: { rateLimit: { max: 20, timeWindow:
       eventId,
       uploaderId: currentUser.id,
       url,
-      filename: fileData.filename || `upload.${saved.mimeType.split("/")[1]}`,
+      filename: originalFilename || `upload.${saved.mimeType.split("/")[1]}`,
       sizeBytes: saved.sizeBytes,
       mimeType: saved.mimeType,
       width,
       height,
       exifData: exifData !== null ? (exifData as object) : undefined,
+      caption,
     },
   });
 
@@ -2331,6 +2366,37 @@ app.delete("/media/:assetId", async (request, reply) => {
 });
 
 // ---------------------------------------------------------------------------
+// PATCH /media/:assetId/caption — update caption (uploader or group admin)
+// ---------------------------------------------------------------------------
+
+app.patch("/media/:assetId/caption", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const { assetId } = request.params as { assetId: string };
+  const body = z.object({ caption: z.string().max(280).nullable() }).parse(request.body);
+
+  const asset = await prisma.mediaAsset.findUnique({
+    where: { id: assetId },
+    include: { event: { select: { groupId: true } } },
+  });
+  if (!asset) return reply.status(404).send({ error: "Not found", code: "NOT_FOUND" });
+
+  const membership = await prisma.membership.findUnique({
+    where: { userId_groupId: { userId: currentUser.id, groupId: asset.event.groupId } },
+  });
+  const isAdmin = ["owner", "admin"].includes(membership?.role ?? "");
+  if (asset.uploaderId !== currentUser.id && !isAdmin) {
+    return reply.status(403).send({ error: "Not authorized", code: "FORBIDDEN" });
+  }
+
+  const updated = await prisma.mediaAsset.update({
+    where: { id: assetId },
+    data: { caption: body.caption ?? null },
+    select: { id: true, caption: true },
+  });
+  return reply.send(updated);
+});
+
+// ---------------------------------------------------------------------------
 // POST /media/:assetId/like — toggle like on a media asset
 // ---------------------------------------------------------------------------
 
@@ -2403,8 +2469,14 @@ app.get("/groups/:groupId/media", async (request, reply) => {
 
 // ---------------------------------------------------------------------------
 // GET /groups/:groupId/photos — all group photos, visible to all members.
-// Sorted newest-first. Used by the Media tab on GroupPage.
+// Sorted newest-first. Used by the Media tab on GroupPage and the gallery page.
+// Supports cursor pagination: pass ?cursor=<lastId> to get the next page.
 // ---------------------------------------------------------------------------
+
+const photosQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().optional(),
+});
 
 app.get("/groups/:groupId/photos", async (request, reply) => {
   const currentUser = await requireAuth(request, reply, prisma);
@@ -2412,7 +2484,7 @@ app.get("/groups/:groupId/photos", async (request, reply) => {
 
   await requireGroupMembership(prisma, currentUser.id, groupId);
 
-  const query = await validateRequest(mediaListQuerySchema, request.query);
+  const query = await validateRequest(photosQuerySchema, request.query);
 
   const media = await prisma.mediaAsset.findMany({
     where: { event: { groupId } },
@@ -2422,9 +2494,132 @@ app.get("/groups/:groupId/photos", async (request, reply) => {
     },
     orderBy: { createdAt: "desc" },
     take: query.limit,
+    ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
   });
 
-  return reply.send({ media });
+  const nextCursor = media.length === query.limit ? (media.at(-1)?.id ?? null) : null;
+
+  return reply.send({ media, nextCursor });
+});
+
+// ============================================================================
+// Media Albums
+// ============================================================================
+
+// GET /groups/:groupId/albums — list albums with cover, count
+app.get("/groups/:groupId/albums", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const { groupId } = request.params as { groupId: string };
+  await requireGroupMembership(prisma, currentUser.id, groupId);
+
+  const albums = await prisma.mediaAlbum.findMany({
+    where: { groupId },
+    orderBy: { createdAt: "desc" },
+    include: {
+      coverAsset: { select: { id: true, url: true } },
+      _count: { select: { assets: true } },
+    },
+  });
+  return reply.send({ albums: albums.map((a) => ({ ...a, photoCount: a._count.assets, _count: undefined })) });
+});
+
+// POST /groups/:groupId/albums — admin creates album
+app.post("/groups/:groupId/albums", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const { groupId } = request.params as { groupId: string };
+  const membership = await requireGroupMembership(prisma, currentUser.id, groupId);
+  requireRole(membership.role, ["owner", "admin"]);
+
+  const body = z.object({ name: z.string().min(1).max(80), description: z.string().max(280).optional() }).parse(request.body);
+
+  const album = await prisma.mediaAlbum.create({
+    data: { groupId, name: body.name, description: body.description, createdById: currentUser.id },
+  });
+  return reply.status(201).send({ album });
+});
+
+// PATCH /groups/:groupId/albums/:albumId — admin updates album
+app.patch("/groups/:groupId/albums/:albumId", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const { groupId, albumId } = request.params as { groupId: string; albumId: string };
+  const membership = await requireGroupMembership(prisma, currentUser.id, groupId);
+  requireRole(membership.role, ["owner", "admin"]);
+
+  const body = z.object({
+    name: z.string().min(1).max(80).optional(),
+    description: z.string().max(280).nullable().optional(),
+    coverAssetId: z.string().nullable().optional(),
+  }).parse(request.body);
+
+  const album = await prisma.mediaAlbum.update({
+    where: { id: albumId },
+    data: { name: body.name, description: body.description ?? undefined, coverAssetId: body.coverAssetId ?? undefined },
+  });
+  return reply.send({ album });
+});
+
+// DELETE /groups/:groupId/albums/:albumId — admin deletes album
+app.delete("/groups/:groupId/albums/:albumId", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const { groupId, albumId } = request.params as { groupId: string; albumId: string };
+  const membership = await requireGroupMembership(prisma, currentUser.id, groupId);
+  requireRole(membership.role, ["owner", "admin"]);
+
+  await prisma.mediaAlbum.delete({ where: { id: albumId } });
+  return reply.send({ success: true });
+});
+
+// GET /groups/:groupId/albums/:albumId/photos — any member, list album photos
+app.get("/groups/:groupId/albums/:albumId/photos", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const { groupId, albumId } = request.params as { groupId: string; albumId: string };
+  await requireGroupMembership(prisma, currentUser.id, groupId);
+
+  const albumAssets = await prisma.mediaAlbumAsset.findMany({
+    where: { albumId },
+    orderBy: { addedAt: "desc" },
+    include: {
+      asset: {
+        include: {
+          uploader: { select: { id: true, name: true, avatarUrl: true } },
+          event: { select: { id: true, title: true } },
+        },
+      },
+    },
+  });
+  return reply.send({ media: albumAssets.map((aa) => aa.asset) });
+});
+
+// POST /groups/:groupId/albums/:albumId/assets — admin adds photo to album
+app.post("/groups/:groupId/albums/:albumId/assets", { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const { groupId, albumId } = request.params as { groupId: string; albumId: string };
+  const membership = await requireGroupMembership(prisma, currentUser.id, groupId);
+  requireRole(membership.role, ["owner", "admin"]);
+
+  const { assetId } = z.object({ assetId: z.string() }).parse(request.body);
+
+  // Verify asset belongs to this group
+  const asset = await prisma.mediaAsset.findFirst({ where: { id: assetId, event: { groupId } } });
+  if (!asset) return reply.status(404).send({ error: "Asset not found in this group", code: "NOT_FOUND" });
+
+  await prisma.mediaAlbumAsset.upsert({
+    where: { albumId_assetId: { albumId, assetId } },
+    create: { albumId, assetId },
+    update: {},
+  });
+  return reply.status(201).send({ success: true });
+});
+
+// DELETE /groups/:groupId/albums/:albumId/assets/:assetId — admin removes photo from album
+app.delete("/groups/:groupId/albums/:albumId/assets/:assetId", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const { groupId, albumId, assetId } = request.params as { groupId: string; albumId: string; assetId: string };
+  const membership = await requireGroupMembership(prisma, currentUser.id, groupId);
+  requireRole(membership.role, ["owner", "admin"]);
+
+  await prisma.mediaAlbumAsset.deleteMany({ where: { albumId, assetId } });
+  return reply.send({ success: true });
 });
 
 // ---------------------------------------------------------------------------
@@ -2655,6 +2850,23 @@ app.post("/events", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } }
 
   await queueCalendarSync(body.groupId, "event_created", event.id);
   await scheduleEventStartNotification(event);
+
+  if (body.details) {
+    const mentioned = await parseMentionedUsers(body.details, body.groupId, currentUser.id);
+    const actorLabel = currentUser.username ? `@${currentUser.username}` : currentUser.name;
+    for (const target of mentioned) {
+      await notificationQueue.add("fanout", {
+        type: "mention",
+        groupId: body.groupId,
+        actorUserId: currentUser.id,
+        eventId: event.id,
+        recipientUserIds: [target.id],
+        title: `${actorLabel} mentioned you`,
+        body: body.details.slice(0, 140),
+        url: `/events/${event.id}`,
+      });
+    }
+  }
 
   return reply.status(201).send({ event });
 });
@@ -5460,7 +5672,7 @@ const NOTIFICATION_INBOX_TTL_DAYS = 7;
 
 // Helper: resolve which notification types are in_app-enabled for a user (default true)
 async function getEnabledInAppTypes(userId: string): Promise<string[]> {
-  const allTypes = ["chat_message", "event_created", "event_changed", "invite", "rsvp_update", "event_start"];
+  const allTypes = ["chat_message", "event_created", "event_changed", "invite", "rsvp_update", "event_start", "mention"];
   const prefs = await prisma.userNotificationPreference.findMany({
     where: { userId, channel: "in_app" },
     select: { type: true, enabled: true },
@@ -5654,7 +5866,7 @@ chatIo = createChatServer(
   authSecret,
   configuredWebOrigins,
   app.log,
-  async ({ channelId, groupId, userId, content }) => {
+  async ({ channelId, groupId, userId, username, content }) => {
     const channel = await prisma.channel.findUnique({
       where: { id: channelId },
       select: { id: true, name: true, tags: { select: { id: true } } },
@@ -5670,6 +5882,23 @@ chatIo = createChatServer(
       body: content.slice(0, 140),
       url: `/groups/${groupId}/channels/${channel.id}`,
     });
+
+    const mentioned = await parseMentionedUsers(content, groupId, userId);
+    if (mentioned.length > 0) {
+      const actorLabel = username ? `@${username}` : "Someone";
+      for (const target of mentioned) {
+        await notificationQueue.add("fanout", {
+          type: "mention",
+          groupId,
+          actorUserId: userId,
+          channelId: channel.id,
+          recipientUserIds: [target.id],
+          title: `${actorLabel} mentioned you in #${channel.name}`,
+          body: content.slice(0, 140),
+          url: `/groups/${groupId}/channels/${channel.id}`,
+        });
+      }
+    }
   }
 );
 

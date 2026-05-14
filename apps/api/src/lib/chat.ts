@@ -38,6 +38,7 @@ interface SocketUser {
   id: string;
   name: string;
   email: string;
+  username: string | null;
 }
 
 interface AuthedSocket extends Socket {
@@ -104,6 +105,7 @@ export function createChatServer(
     channelId: string;
     groupId: string;
     userId: string;
+    username: string | null;
     content: string;
   }) => Promise<void>
 ): SocketIOServer {
@@ -126,7 +128,7 @@ export function createChatServer(
 
       const user = await prisma.user.findUnique({
         where: { id: userId },
-        select: { id: true, name: true, email: true },
+        select: { id: true, name: true, email: true, username: true },
       });
       if (!user) return next(new Error("User not found"));
 
@@ -267,6 +269,7 @@ export function createChatServer(
             channelId,
             groupId: channel.groupId,
             userId: user.id,
+            username: user.username ?? null,
             content: message.content,
           });
         }

@@ -50,7 +50,11 @@ export default function SettingsPage() {
   const [themeSaving, setThemeSaving] = useState(false)
   const [avatarUploading, setAvatarUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const currentTheme = user?.theme ?? 'dark'
+
+  const rawTheme = user?.theme ?? 'dark'
+  const [currentMode, currentAccentRaw] = rawTheme.split(':')
+  const currentTheme = (currentMode === 'light' ? 'light' : 'dark') as 'dark' | 'light'
+  const currentAccent = currentAccentRaw ?? 'indigo'
 
   // Tag subscriptions state
   const { data: groupsData } = useGroups()
@@ -163,8 +167,9 @@ export default function SettingsPage() {
     setInstallPrompt(null)
   }
 
-  const handleThemeChange = async (newTheme: 'dark' | 'light') => {
-    if (newTheme === currentTheme || themeSaving) return
+  const saveTheme = async (mode: 'dark' | 'light', accent: string) => {
+    const newTheme = accent === 'indigo' ? mode : `${mode}:${accent}`
+    if (newTheme === rawTheme || themeSaving) return
     setThemeSaving(true)
     try {
       const data = await apiFetch<UpdateMeResponse>('/users/me', {
@@ -185,6 +190,9 @@ export default function SettingsPage() {
       setThemeSaving(false)
     }
   }
+
+  const handleModeChange = (newMode: 'dark' | 'light') => saveTheme(newMode, currentAccent)
+  const handleAccentChange = (newAccent: string) => saveTheme(currentTheme, newAccent)
 
   const isStandalone =
     window.matchMedia('(display-mode: standalone)').matches ||
@@ -240,35 +248,74 @@ export default function SettingsPage() {
 
       <div className="space-y-4 mb-8">
         <h3 className="text-lg font-semibold text-gray-200">Appearance</h3>
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <p className="text-sm font-medium text-white mb-3">Theme</p>
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => handleThemeChange('dark')}
-              disabled={themeSaving}
-              aria-pressed={currentTheme === 'dark'}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
-                currentTheme === 'dark'
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-              }`}
-            >
-              Dark
-            </button>
-            <button
-              type="button"
-              onClick={() => handleThemeChange('light')}
-              disabled={themeSaving}
-              aria-pressed={currentTheme === 'light'}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
-                currentTheme === 'light'
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-              }`}
-            >
-              Light
-            </button>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-5">
+          {/* Mode */}
+          <div>
+            <p className="text-sm font-medium text-white mb-3">Mode</p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => handleModeChange('dark')}
+                disabled={themeSaving}
+                aria-pressed={currentTheme === 'dark'}
+                className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
+                  currentTheme === 'dark'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                Dark
+              </button>
+              <button
+                type="button"
+                onClick={() => handleModeChange('light')}
+                disabled={themeSaving}
+                aria-pressed={currentTheme === 'light'}
+                className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
+                  currentTheme === 'light'
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                Light
+              </button>
+            </div>
+          </div>
+
+          {/* Accent */}
+          <div>
+            <p className="text-sm font-medium text-white mb-3">Accent colour</p>
+            <div className="flex gap-2 flex-wrap">
+              {([
+                { id: 'indigo',  label: 'Indigo',  color: 'oklch(51.1% 0.262 276.966)' },
+                { id: 'violet',  label: 'Violet',  color: 'oklch(54.1% 0.281 293.009)' },
+                { id: 'sky',     label: 'Sky',     color: 'oklch(58.8% 0.158 241.966)' },
+                { id: 'emerald', label: 'Emerald', color: 'oklch(59.6% 0.145 163.225)' },
+                { id: 'rose',    label: 'Rose',    color: 'oklch(58.6% 0.253 17.585)'  },
+                { id: 'amber',   label: 'Amber',   color: 'oklch(66.6% 0.179 58.318)'  },
+              ] as const).map(({ id, label, color }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => handleAccentChange(id)}
+                  disabled={themeSaving}
+                  aria-pressed={currentAccent === id}
+                  aria-label={label}
+                  title={label}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 ${
+                    currentAccent === id
+                      ? 'bg-gray-700 text-white ring-2 ring-offset-2 ring-offset-gray-900 ring-white/30'
+                      : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  }`}
+                >
+                  <span
+                    className="w-3 h-3 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: color }}
+                  />
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>

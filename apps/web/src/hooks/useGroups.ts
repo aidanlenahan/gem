@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiFetch } from '../lib/api'
 
 export type GroupSummary = {
@@ -432,10 +432,23 @@ export type GroupMediaAsset = {
   width: number | null
   height: number | null
   exifData: Record<string, unknown> | null
+  caption: string | null
   createdAt: string
   uploaderId: string | null
   uploader: { id: string; name: string; avatarUrl: string | null } | null
   event: { id: string; title: string }
+}
+
+export type MediaAlbum = {
+  id: string
+  groupId: string
+  name: string
+  description: string | null
+  createdById: string | null
+  coverAssetId: string | null
+  coverAsset: { id: string; url: string } | null
+  photoCount: number
+  createdAt: string
 }
 
 export type GroupMediaSettings = {
@@ -486,12 +499,94 @@ export function useUpdateGroupMediaSettings(groupId: string) {
   })
 }
 
-type GroupPhotosResponse = { media: GroupMediaAsset[] }
+type GroupPhotosResponse = { media: GroupMediaAsset[]; nextCursor: string | null }
 
 export function useGroupPhotos(groupId: string) {
   return useQuery({
     queryKey: ['groups', groupId, 'photos'],
     queryFn: () => apiFetch<GroupPhotosResponse>(`/groups/${groupId}/photos`),
     enabled: !!groupId,
+  })
+}
+
+export function useGroupPhotosInfinite(groupId: string) {
+  return useInfiniteQuery({
+    queryKey: ['groups', groupId, 'photos', 'infinite'],
+    queryFn: ({ pageParam }) =>
+      apiFetch<GroupPhotosResponse>(
+        `/groups/${groupId}/photos${pageParam ? `?cursor=${pageParam}` : ''}`
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    enabled: !!groupId,
+  })
+}
+
+// ─── Albums ──────────────────────────────────────────────────────────────────
+
+export function useGroupAlbums(groupId: string) {
+  return useQuery({
+    queryKey: ['groups', groupId, 'albums'],
+    queryFn: () => apiFetch<{ albums: MediaAlbum[] }>(`/groups/${groupId}/albums`),
+    enabled: !!groupId,
+  })
+}
+
+export function useAlbumPhotos(groupId: string, albumId: string | null) {
+  return useQuery({
+    queryKey: ['groups', groupId, 'albums', albumId, 'photos'],
+    queryFn: () => apiFetch<{ media: GroupMediaAsset[] }>(`/groups/${groupId}/albums/${albumId}/photos`),
+    enabled: !!groupId && !!albumId,
+  })
+}
+
+export function useCreateAlbum(groupId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { name: string; description?: string }) =>
+      apiFetch<{ album: MediaAlbum }>(`/groups/${groupId}/albums`, { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups', groupId, 'albums'] }),
+  })
+}
+
+export function useUpdateAlbum(groupId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ albumId, ...body }: { albumId: string; name?: string; description?: string | null; coverAssetId?: string | null }) =>
+      apiFetch<{ album: MediaAlbum }>(`/groups/${groupId}/albums/${albumId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups', groupId, 'albums'] }),
+  })
+}
+
+export function useDeleteAlbum(groupId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (albumId: string) =>
+      apiFetch(`/groups/${groupId}/albums/${albumId}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups', groupId, 'albums'] }),
+  })
+}
+
+export function useAddToAlbum(groupId: string, albumId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (assetId: string) =>
+      apiFetch(`/groups/${groupId}/albums/${albumId}/assets`, { method: 'POST', body: JSON.stringify({ assetId }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['groups', groupId, 'albums', albumId, 'photos'] })
+      qc.invalidateQueries({ queryKey: ['groups', groupId, 'albums'] })
+    },
+  })
+}
+
+export function useRemoveFromAlbum(groupId: string, albumId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (assetId: string) =>
+      apiFetch(`/groups/${groupId}/albums/${albumId}/assets/${assetId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['groups', groupId, 'albums', albumId, 'photos'] })
+      qc.invalidateQueries({ queryKey: ['groups', groupId, 'albums'] })
+    },
   })
 }

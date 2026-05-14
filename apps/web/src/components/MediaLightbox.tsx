@@ -9,6 +9,7 @@ export interface LightboxMedia {
   width: number | null
   height: number | null
   exifData: Record<string, unknown> | null
+  caption: string | null
   createdAt: string
   uploader: { id: string; name: string; avatarUrl: string | null } | null
 }
@@ -35,21 +36,43 @@ export function MediaLightbox({
   media,
   initialIndex,
   onClose,
+  currentUserId,
+  isAdmin,
+  onSaveCaption,
 }: {
   media: LightboxMedia[]
   initialIndex: number
   onClose: () => void
+  currentUserId?: string
+  isAdmin?: boolean
+  onSaveCaption?: (assetId: string, caption: string | null) => Promise<void>
 }) {
   const [index, setIndex] = useState(initialIndex)
   const [showInfo, setShowInfo] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  const [editingCaption, setEditingCaption] = useState(false)
+  const [captionDraft, setCaptionDraft] = useState('')
+  const [savingCaption, setSavingCaption] = useState(false)
   const total = media.length
   const current = media[index]
   const touchStartX = useRef<number | null>(null)
   const touchStartY = useRef<number | null>(null)
 
-  const prev = useCallback(() => { setIndex((i) => (i - 1 + total) % total); setShowInfo(false) }, [total])
-  const next = useCallback(() => { setIndex((i) => (i + 1) % total); setShowInfo(false) }, [total])
+  const prev = useCallback(() => { setIndex((i) => (i - 1 + total) % total); setShowInfo(false); setEditingCaption(false) }, [total])
+  const next = useCallback(() => { setIndex((i) => (i + 1) % total); setShowInfo(false); setEditingCaption(false) }, [total])
+
+  const canEditCaption = !!(onSaveCaption && (isAdmin || currentUserId === current?.uploader?.id))
+
+  const handleSaveCaption = async () => {
+    if (!onSaveCaption) return
+    setSavingCaption(true)
+    try {
+      await onSaveCaption(current.id, captionDraft.trim() || null)
+      setEditingCaption(false)
+    } finally {
+      setSavingCaption(false)
+    }
+  }
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX
@@ -194,6 +217,65 @@ export function MediaLightbox({
           </button>
         )}
       </div>
+
+      {/* Caption bar */}
+      {(current.caption || canEditCaption) && !editingCaption && (
+        <div
+          className="flex-shrink-0 flex items-center gap-2 px-5 py-2 bg-black/60"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <p className="flex-1 text-sm text-gray-200 italic">
+            {current.caption || <span className="text-gray-500 not-italic">No caption</span>}
+          </p>
+          {canEditCaption && (
+            <button
+              type="button"
+              onClick={() => { setCaptionDraft(current.caption ?? ''); setEditingCaption(true) }}
+              className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+              aria-label="Edit caption"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
+          )}
+        </div>
+      )}
+      {editingCaption && (
+        <div
+          className="flex-shrink-0 px-4 py-3 bg-gray-900/95 border-t border-white/10 flex flex-col gap-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <textarea
+            value={captionDraft}
+            onChange={(e) => setCaptionDraft(e.target.value.slice(0, 280))}
+            placeholder="Add a caption…"
+            rows={2}
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            autoFocus
+          />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-gray-500">{captionDraft.length}/280</span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingCaption(false)}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCaption}
+                disabled={savingCaption}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50"
+              >
+                {savingCaption ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Info panel */}
       {showInfo && (
