@@ -1,90 +1,114 @@
-# GEM (Group Event Manager)
+# GEM — Group Event Manager
 
-A web app and installable PWA for friend groups to plan events, chat, and share media — in one place.
+A private app for friend groups to plan events, chat, and share photos — all in one place.
 
-## What it does
+## What GEM does
 
-Most friend groups split coordination across multiple apps: one for scheduling, another for chat, another for photos. GEM consolidates event planning, event-scoped chat, and notifications into a single app, with group membership and permission controls baked in.
+Most friend groups juggle multiple apps: one for scheduling, one for chat, one for photos. GEM brings it all together in a single installable app, purpose-built for small groups who know each other.
 
-**Core features:**
+---
 
-- **Groups** — Create and manage multiple independent groups. Roles: owner, admin, member.
-- **Group invites** — Each group has a shareable 12-character invite code. Join requests create a pending membership; owner is notified by email and can approve or deny from the Members tab.
-- **Events** — Create events with title, description, date/time, location, tags, and RSVP tracking. Rate events and mark standout ones as legendary.
-- **Event chat** — Each event has its own chat room. Supports pinned messages, typing indicators, message reactions, and cursor-paginated history.
-- **Tag channels** — Group-level topic channels. Users subscribe to tags they care about; notifications are scoped to matching tags.
-- **Notifications** — Web push (VAPID) and email (SMTP). Per-user delivery preferences by type and tag.
-- **Media** — Photo/video uploads per event via signed S3 URLs. Per-file and per-event size limits enforced.
-- **Calendar export** — ICS export and Google Calendar deep-link per event.
-- **User profiles** — Display name, avatar (S3-uploaded), unique username (changeable once per year), and dark/light theme preference.
-- **Auth** — Email/password registration with OTP verification, passwordless sign-in via email code, and forgot-password reset flow.
-- **Beta access control** — Group creation and registration gateable behind single-use beta codes.
-- **PWA** — Installable, service-worker backed, works on mobile.
+### Groups
+
+Create a group for any set of friends. Each group is private and self-contained — events, channels, photos, and members are all scoped to it. Roles (owner, admin, member) give admins the controls they need without overexposing everything.
+
+- **Invite links** — share a 12-character link to let people join; pending join requests can be approved or denied
+- **Group management** — edit group details, manage members, promote/demote roles, regenerate the invite link, view an audit log of all admin actions, and export it to CSV
+- **Group stats** — admins can view total events, RSVPs, message counts, storage usage, top tags, and most active members
+
+### Events
+
+Plan an event with a title, date and time, location, description, and optional RSVP cap. Tag events so members can filter and subscribe to the content they care about.
+
+- RSVP as Going, Maybe, or Not Going — live attendance counts are shown to all members
+- Private events — invite specific members only; non-invited members cannot see the event
+- Edit events after creation — update any field, add or change the cover photo or tags
+- Rate events (1–5) after they end — the average rating appears on the event page
+- Export to calendar — download an `.ics` file or subscribe to a live group feed that syncs to Apple Calendar, Outlook, or Google Calendar
+
+### Channels
+
+Group-level topic channels for async conversation — create as many as you need, open or invite-only.
+
+- **Real-time messaging** via a shared WebSocket connection — messages appear instantly
+- Emoji reactions, pinned messages, edit/delete own messages, typing indicators
+- Reply to any message with an inline quoted preview
+- Unread tracking — the server tracks your last-read position and shows an unread badge
+- Channel tags — tag channels for better organisation within a group
+- Mobile-friendly channel drawer with a full slide-in channel list
+
+### Photos
+
+Upload photos to any event. Photos are stored on the server with configurable per-group storage quotas.
+
+- Full-screen lightbox — swipe or arrow-key navigation, download, and verbose EXIF info panel (camera, lens, focal length, aperture, shutter, ISO, GPS coordinates, dimensions)
+- Group Photos tab — browse every photo uploaded across all events in a grid, sorted newest-first
+- Storage management — group admins can view usage, delete photos, toggle upload permissions, and adjust the storage cap up to 1 GB
+
+### Notifications
+
+- **Push notifications** for PWA installs — get alerted to new events, RSVPs, and messages even when the app is closed
+- **Email notifications** via SMTP for the same events
+- **Per-type preferences** — toggle push and email independently for each notification type
+- **Notification inbox** — filter by type, search, and batch mark-as-read
+
+### Profiles and auth
+
+- Email registration with 6-digit OTP verification
+- Forgot-password and reset-password flows (secure token, 1-hour expiry)
+- Profile photo, display name, and a unique username (changeable once per year)
+- Dark and light theme
+
+### PWA
+
+GEM is installable on iOS and Android directly from the browser — no app store needed. Workbox service worker provides offline caching and background push delivery.
+
+### Beta access control
+
+Registration and group creation can be gated behind single-use beta codes, manageable from the Developer panel.
+
+---
 
 ## Tech stack
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS, Headless UI |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS |
 | State / data | TanStack Query, Zustand, React Router |
-| Backend | Fastify, TypeScript, Zod |
+| Backend | Fastify, TypeScript |
 | Realtime | Socket.IO |
 | Database | PostgreSQL + Prisma ORM |
 | Cache / queues | Redis, BullMQ |
-| File storage | S3-compatible (local: MinIO) |
-| Email | Nodemailer (SMTP — Gmail App Password or any SMTP server) |
+| Email | Nodemailer (SMTP) |
 | Push | Web Push (VAPID) |
-| Testing | Vitest, Supertest, Playwright |
 | PWA | Workbox / vite-plugin-pwa |
 
-## Project structure
-
-```
-apps/
-  api/          Fastify REST + Socket.IO server
-  web/          React + Vite frontend / PWA
-packages/
-  shared/       Shared TypeScript types and utilities
-infra/
-  docker-compose.yml    Local Postgres, Redis, MinIO
-```
+---
 
 ## Local development
 
 **Prerequisites:** Node 20+, Docker
 
-**1. Start infrastructure**
-
 ```bash
+# 1. Start infrastructure (Postgres, Redis, local file storage)
 docker compose -f infra/docker-compose.yml up -d
-```
 
-**2. Configure environment**
-
-```bash
+# 2. Configure environment
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env
-```
 
-Edit `apps/api/.env` and set `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` for push notifications. For transactional email, set `SMTP_USER` and `SMTP_PASS` (Gmail App Password works — leave blank to disable email in dev). All other defaults work as-is for local development.
-
-**3. Install dependencies and migrate**
-
-```bash
+# 3. Install dependencies and run migrations
 npm install
 npm run db:migrate
-```
 
-**4. Start dev servers**
-
-```bash
+# 4. Start dev servers (API + web in parallel)
 npm run dev
 ```
 
 - API: `http://localhost:3000`
 - Web: `http://localhost:5173`
 
-## Available scripts
+**Key scripts:**
 
 | Command | Description |
 |---|---|
@@ -93,23 +117,6 @@ npm run dev
 | `npm run test` | Run all tests |
 | `npm run typecheck` | TypeScript check across all workspaces |
 | `npm run db:migrate` | Run Prisma migrations |
-| `npm run db:seed` | Seed the database |
 | `npm run db:studio` | Open Prisma Studio |
 
-## Environment variables
-
-See `apps/api/.env.example` and `apps/web/.env.example` for the full list. Key variables:
-
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `REDIS_URL` | Redis connection string |
-| `AUTH_SECRET` | JWT signing secret |
-| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Web push keys (generate with `web-push generate-vapid-keys`) |
-| `S3_ENDPOINT` / `S3_BUCKET` | Object storage config |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` | SMTP server config (defaults to Gmail — `smtp.gmail.com:465`) |
-| `SMTP_USER` / `SMTP_PASS` | SMTP credentials (Gmail: use an App Password). Optional in dev |
-| `EMAIL_FROM` | Sender address, e.g. `GEM <noreply@example.com>` |
-| `GROUP_CREATION_BETA_REQUIRED` | Set to `true` to require beta codes for group creation |
-| `BETA_ADMIN_SECRET` | Secret for the `POST /admin/beta-codes` endpoint |
-| `VITE_API_BASE_URL` | API base URL used by the frontend |
+See `apps/api/.env.example` and `apps/web/.env.example` for all configurable environment variables.

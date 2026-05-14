@@ -28,7 +28,8 @@ import MarketingLayout from './components/MarketingLayout'
 import LandingPage from './pages/LandingPage'
 import HelpPage from './pages/HelpPage'
 import ContactPage from './pages/ContactPage'
-import ChangelogPage from './pages/ChangelogPage'
+import UpdatesPage from './pages/UpdatesPage'
+import GroupStatsPage from './pages/GroupStatsPage'
 import NotFoundPage from './pages/NotFoundPage'
 
 const queryClient = new QueryClient({
@@ -199,7 +200,7 @@ export default function App() {
           <Route path="home" element={<LandingPage />} />
           <Route path="help" element={<HelpPage />} />
           <Route path="contact" element={<ContactPage />} />
-          <Route path="changelog" element={<ChangelogPage />} />
+          <Route path="updates" element={<UpdatesPage />} />
           <Route path="login" element={<RedirectIfAuthed><LoginPage /></RedirectIfAuthed>} />
           <Route path="register" element={<RedirectIfAuthed><RegisterPage /></RedirectIfAuthed>} />
           <Route path="verify-email" element={<VerifyEmailPage />} />
@@ -220,6 +221,7 @@ export default function App() {
           <Route path="/groups" element={<GroupsPage />} />
           <Route path="/groups/:groupId" element={<GroupPage />} />
           <Route path="/groups/:groupId/manage" element={<GroupManagePage />} />
+          <Route path="/groups/:groupId/stats" element={<GroupStatsPage />} />
           <Route path="/groups/:groupId/events/new" element={<CreateEventPage />} />
           <Route path="/events/:eventId" element={<EventPage />} />
           <Route path="/groups/:groupId/channels/:channelId" element={<ChannelPage />} />

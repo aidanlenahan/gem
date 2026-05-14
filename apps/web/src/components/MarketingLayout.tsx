@@ -13,7 +13,7 @@ export default function MarketingLayout() {
 
   const navLinks = [
     { to: '/home', label: 'Home', end: true },
-    { to: '/changelog', label: "What's New", end: false },
+    { to: '/updates', label: 'Updates', end: false },
     { to: '/help', label: 'Help', end: false },
     { to: '/contact', label: 'Contact', end: false },
   ]
@@ -35,7 +35,7 @@ export default function MarketingLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
+    <div className="h-full bg-gray-950 text-gray-100 flex flex-col overflow-hidden">
       {/* Navbar */}
       <header className="sticky top-0 z-50 bg-gray-950/80 backdrop-blur-md border-b border-gray-800/60">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
@@ -261,7 +261,7 @@ export default function MarketingLayout() {
       </header>
 
       {/* Page content */}
-      <main className="flex-1">
+      <main className="flex-1 overflow-y-auto">
         <Outlet />
       </main>
 
@@ -270,7 +270,7 @@ export default function MarketingLayout() {
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
           <span className="font-semibold text-indigo-400">GEM</span>
           <div className="flex gap-5">
-            <Link to="/changelog" className="hover:text-gray-300 transition-colors">What's New</Link>
+            <Link to="/updates" className="hover:text-gray-300 transition-colors">Updates</Link>
             <Link to="/help" className="hover:text-gray-300 transition-colors">Help</Link>
             <Link to="/contact" className="hover:text-gray-300 transition-colors">Contact</Link>
             {!token && <Link to="/login" className="hover:text-gray-300 transition-colors">Log in</Link>}
