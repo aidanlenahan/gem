@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import PageToolbar from '../components/PageToolbar'
 import { useCreateEvent } from '../hooks/useEvents'
 import { useGroupTags } from '../hooks/useGroups'
@@ -9,23 +9,36 @@ import DateTimePicker from '../components/DateTimePicker'
 
 type CreateEventResult = { event: { id: string } }
 
+type PrefillState = {
+  title?: string
+  details?: string
+  dateTime?: string
+  durationMinutes?: number
+  location?: string
+  maxAttendees?: string
+  isPrivate?: boolean
+  tagIds?: string[]
+}
+
 const MAX_EVENT_TAGS = 3
 
 export default function CreateEventPage() {
   const { groupId } = useParams<{ groupId: string }>()
   const navigate = useNavigate()
+  const { state } = useLocation()
+  const prefill = (state as { prefill?: PrefillState } | null)?.prefill
   const toast = useToast()
   const createEvent = useCreateEvent()
   const { data: tagsData } = useGroupTags(groupId!)
 
-  const [title, setTitle] = useState('')
-  const [details, setDetails] = useState('')
-  const [dateTime, setDateTime] = useState('')
-  const [durationMinutes, setDurationMinutes] = useState(60)
-  const [location, setLocation] = useState('')
-  const [maxAttendees, setMaxAttendees] = useState('')
-  const [isPrivate, setIsPrivate] = useState(false)
-  const [selectedTagIds, setSelectedTagIds] = useState<string[]>([])
+  const [title, setTitle] = useState(prefill?.title ?? '')
+  const [details, setDetails] = useState(prefill?.details ?? '')
+  const [dateTime, setDateTime] = useState(prefill?.dateTime ?? '')
+  const [durationMinutes, setDurationMinutes] = useState(prefill?.durationMinutes ?? 60)
+  const [location, setLocation] = useState(prefill?.location ?? '')
+  const [maxAttendees, setMaxAttendees] = useState(prefill?.maxAttendees ?? '')
+  const [isPrivate, setIsPrivate] = useState(prefill?.isPrivate ?? false)
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>(prefill?.tagIds ?? [])
   const locationInputRef = useRef<HTMLInputElement>(null)
   const tags = tagsData?.tags ?? []
 
@@ -109,7 +122,7 @@ export default function CreateEventPage() {
   return (
     <div className="px-4 py-6 sm:p-6 max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-white">Create Event</h2>
+        <h2 className="text-2xl font-bold text-white">{prefill ? 'Duplicate Event' : 'Create Event'}</h2>
         <PageToolbar />
       </div>
       <form onSubmit={handleSubmit} className="space-y-4">
