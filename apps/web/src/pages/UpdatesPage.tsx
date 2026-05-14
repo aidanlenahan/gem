@@ -19,6 +19,20 @@ interface Release {
 
 const releases: Release[] = [
   {
+    version: '0.8',
+    date: 'May 2026',
+    label: 'Beta',
+    summary: 'Photo captions, media albums, a full-page group gallery, light mode, and duplicate event.',
+    changes: [
+      { type: 'new', text: 'Duplicate any event — a copy icon on every event page pre-fills the Create Event form with all fields (title, details, location, privacy, tags, duration) so you can pick a new date and save it as a fresh event; available to every group member' },
+      { type: 'new', text: 'Photo captions — add or edit a caption on any photo directly from the lightbox; visible to all members, editable by the uploader or a group admin' },
+      { type: 'new', text: 'Media Albums — group admins can create named albums, add photos to them, set a cover, and delete albums; members can browse albums from the Photos tab' },
+      { type: 'new', text: 'Group Gallery page — a dedicated full-page view of every photo in the group with infinite scroll, caption editing, and the full lightbox; linked from the Photos tab' },
+      { type: 'new', text: 'Light mode — toggle between dark and light in Settings; the choice is saved to your account and applied across all devices' },
+      { type: 'new', text: 'Accent colour picker in Settings — choose your highlight colour (indigo, violet, rose, amber, emerald, sky); pairs with both dark and light mode' },
+    ],
+  },
+  {
     version: '0.7',
     date: 'May 2026',
     label: 'Beta',
