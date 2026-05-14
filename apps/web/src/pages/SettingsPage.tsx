@@ -287,12 +287,12 @@ export default function SettingsPage() {
             <p className="text-sm font-medium text-white mb-3">Accent colour</p>
             <div className="flex gap-2 flex-wrap">
               {([
-                { id: 'indigo',  label: 'Indigo',  color: 'oklch(51.1% 0.262 276.966)' },
-                { id: 'violet',  label: 'Violet',  color: 'oklch(54.1% 0.281 293.009)' },
-                { id: 'sky',     label: 'Sky',     color: 'oklch(58.8% 0.158 241.966)' },
-                { id: 'emerald', label: 'Emerald', color: 'oklch(59.6% 0.145 163.225)' },
-                { id: 'rose',    label: 'Rose',    color: 'oklch(58.6% 0.253 17.585)'  },
-                { id: 'amber',   label: 'Amber',   color: 'oklch(66.6% 0.179 58.318)'  },
+                { id: 'indigo',  label: '',  color: 'oklch(51.1% 0.262 276.966)' }, // indigo
+                { id: 'violet',  label: '',  color: 'oklch(54.1% 0.281 293.009)' }, // violet
+                { id: 'sky',     label: '',     color: 'oklch(58.8% 0.158 241.966)' }, // sky
+                { id: 'emerald', label: '', color: 'oklch(59.6% 0.145 163.225)' }, // emerald
+                { id: 'rose',    label: '',    color: 'oklch(58.6% 0.253 17.585)'  }, // rose
+                { id: 'amber',   label: '',   color: 'oklch(66.6% 0.179 58.318)'  }, // amber
               ] as const).map(({ id, label, color }) => (
                 <button
                   key={id}
