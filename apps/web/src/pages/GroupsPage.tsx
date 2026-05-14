@@ -228,6 +228,7 @@ export default function GroupsPage() {
             onChange={(e) => setName(e.target.value)}
             placeholder="Group name"
             required
+            maxLength={60}
             className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           <textarea
@@ -235,6 +236,7 @@ export default function GroupsPage() {
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Description (optional)"
             rows={3}
+            maxLength={500}
             className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
           />
           <div>

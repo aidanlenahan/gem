@@ -431,7 +431,7 @@ export default function GroupManagePage() {
               type="text"
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
-              maxLength={255}
+              maxLength={60}
               required
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
@@ -442,7 +442,7 @@ export default function GroupManagePage() {
               value={editDescription}
               onChange={(e) => setEditDescription(e.target.value)}
               rows={3}
-              maxLength={2000}
+              maxLength={500}
               placeholder="Optional description"
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
             />

@@ -31,8 +31,8 @@ export const schemas = {
   name: z.string().min(1).max(255),
 
   // Event
-  title: z.string().min(1).max(255),
-  details: z.string().max(5000).optional(),
+  title: z.string().min(1).max(100),
+  details: z.string().max(3000).optional(),
   dateTime: z.string().datetime(),
   rating: z.number().min(1).max(10).optional(),
 

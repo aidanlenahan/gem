@@ -132,6 +132,7 @@ export default function CreateEventPage() {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
+            maxLength={100}
             className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </div>
@@ -142,6 +143,7 @@ export default function CreateEventPage() {
             value={details}
             onChange={(e) => setDetails(e.target.value)}
             rows={4}
+            maxLength={3000}
             className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
           />
         </div>
@@ -173,6 +175,7 @@ export default function CreateEventPage() {
             value={location}
             onChange={(e) => setLocation(e.target.value)}
             placeholder="e.g., Central Park"
+            maxLength={200}
             className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </div>

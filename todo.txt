@@ -9,8 +9,15 @@ All tasks — completed and pending. Completed entries from `tasks.txt` are incl
 - [ ] Step 16: PBS backup integration + restore test
 ================
 - temporary channel chats? expire after one week? or add 'load more' button after so many messages once scrolled all the way up on mobile to prevent accidental scroll all the way up and improve channel loading time?
-
-
+- private chats non admins able to see members
+- more protections against destructive actions (deleting group, channel, etc.)
+- end to end encrypted chats?
+- add reply function to 'slide right' action on mobile
+- confirm message pin functionality
+- mobile auto zoom issue on channel page
+- 'mention' all subscribers to a tag with '#', same functionality as '@' mentions
+- users can add short bio
+- auto hyperlink links (all open in new tab)
 
 =================
 ## Channel chat — implementation checklist
@@ -91,7 +98,7 @@ All tasks — completed and pending. Completed entries from `tasks.txt` are incl
 - [x] add media tab to group page sorted by date with same info on it in event page info button
 
 ## Later
-- [ ] waitinglist to make account
+- [ ] waitinglist to make account (figure out where waitinglist is managed--developer page, email?)
 - [ ] demo mode (not logged in, temp session)
 - [ ] add 'social' functionality (friends via invite link, global username search, mutual groups)
 - [ ] verify account via alternative channel (WhatsApp, Telegram, SMS)

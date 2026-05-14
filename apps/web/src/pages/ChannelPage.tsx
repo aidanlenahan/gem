@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import PageToolbar from '../components/PageToolbar'
 import NotificationBell from '../components/NotificationBell'
@@ -19,6 +19,32 @@ import { useToast } from '../hooks/useToast'
 import Avatar from '../components/Avatar'
 import Spinner from '../components/Spinner'
 import { getApiErrorMessage } from '../lib/api'
+
+function renderContent(
+  content: string,
+  currentUserId: string,
+  members: Array<{ userId: string; username?: string | null }>,
+) {
+  const parts = content.split(/(@[a-zA-Z0-9_.-]+)/g)
+  return parts.map((part, i) => {
+    const match = part.match(/^@([a-zA-Z0-9_.-]+)$/)
+    if (!match) return <span key={i}>{part}</span>
+    const handle = match[1].toLowerCase()
+    const member = members.find((m) => m.username?.toLowerCase() === handle)
+    if (!member) return <span key={i}>{part}</span>
+    const isMe = member.userId === currentUserId
+    return (
+      <Link
+        key={i}
+        to={`/u/${member.username}`}
+        className={`font-medium ${isMe ? 'text-indigo-300 bg-indigo-900/30 rounded px-0.5' : 'text-indigo-400'} hover:underline`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {part}
+      </Link>
+    )
+  })
+}
 
 function formatTime(iso: string): string {
   const d = new Date(iso)
@@ -224,6 +250,10 @@ export default function ChannelPage() {
 
   const [input, setInput] = useState('')
   const [replyingTo, setReplyingTo] = useState<MergedMessage | null>(null)
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null)
+  const [mentionStart, setMentionStart] = useState(-1)
+  const [mentionIndex, setMentionIndex] = useState(0)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [newChannelName, setNewChannelName] = useState('')
   const [newChannelInviteOnly, setNewChannelInviteOnly] = useState(false)
@@ -384,6 +414,25 @@ export default function ChannelPage() {
     setShowScrollBtn(false)
   }
 
+  const members = membersData?.members ?? []
+
+  const mentionCandidates = useMemo(() => {
+    if (mentionQuery === null) return []
+    return members
+      .filter((m) => m.status === 'active' && m.username)
+      .filter((m) => mentionQuery === '' || m.username!.toLowerCase().startsWith(mentionQuery.toLowerCase()))
+      .slice(0, 8)
+  }, [mentionQuery, members])
+
+  const applyMention = useCallback((username: string) => {
+    const before = input.slice(0, mentionStart)
+    const after = input.slice(mentionStart + 1 + (mentionQuery?.length ?? 0))
+    setInput(`${before}@${username} ${after}`)
+    setMentionQuery(null)
+    setMentionIndex(0)
+    textareaRef.current?.focus()
+  }, [input, mentionStart, mentionQuery])
+
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault()
     const trimmed = input.trim()
@@ -395,15 +444,37 @@ export default function ChannelPage() {
     )
     setInput('')
     setReplyingTo(null)
+    setMentionQuery(null)
     stopTyping()
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value)
-    if (e.target.value) sendTyping()
+    const val = e.target.value
+    setInput(val)
+    if (val) sendTyping()
+    const cursor = e.target.selectionStart ?? val.length
+    const before = val.slice(0, cursor)
+    const match = before.match(/@([a-zA-Z0-9_.-]*)$/)
+    if (match) {
+      setMentionQuery(match[1])
+      setMentionStart(before.lastIndexOf('@'))
+      setMentionIndex(0)
+    } else {
+      setMentionQuery(null)
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mentionCandidates.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setMentionIndex((i) => Math.min(i + 1, mentionCandidates.length - 1)); return }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); setMentionIndex((i) => Math.max(i - 1, 0)); return }
+      if (e.key === 'Escape')    { e.preventDefault(); setMentionQuery(null); return }
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+        e.preventDefault()
+        applyMention(mentionCandidates[mentionIndex].username!)
+        return
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend(e as unknown as React.FormEvent)
@@ -691,6 +762,7 @@ export default function ChannelPage() {
                 new Date(msg.createdAt).getTime() - new Date(prev.createdAt).getTime() < GROUP_THRESHOLD_MS
 
               const isOwn = msg.userId === currentUser?.id
+              const msgUsername = members.find((m) => m.userId === msg.userId)?.username ?? null
               const canDelete = !msg.pending && !msg.deleted && isOwn
               const canEdit = !msg.pending && !msg.deleted && isOwn
               const canPin = !msg.pending && !msg.deleted && isAdminOrOwner
@@ -711,7 +783,7 @@ export default function ChannelPage() {
               ) : null
 
               const hoverActions = !msg.pending && (
-                <div className="absolute -top-1 right-0 hidden group-hover/msg:flex items-center gap-0.5 bg-gray-900 border border-gray-700 rounded-lg p-0.5 shadow-lg z-10">
+                <div className="absolute bottom-full right-0 mb-0.5 hidden group-hover/msg:flex items-center gap-0.5 bg-gray-900 border border-gray-700 rounded-lg p-0.5 shadow-lg z-10">
                   {/* Reply */}
                   {!msg.deleted && (
                     <button
@@ -802,7 +874,7 @@ export default function ChannelPage() {
                     }}
                     autoFocus
                     rows={2}
-                    maxLength={4000}
+                    maxLength={2000}
                     className="w-full bg-gray-800 border border-indigo-500 rounded-lg px-3 py-2 text-sm text-white resize-none focus:outline-none"
                   />
                   <div className="flex gap-2 mt-1">
@@ -821,7 +893,7 @@ export default function ChannelPage() {
                 </div>
               ) : (
                 <>
-                  <p className={`text-[15px] break-words whitespace-pre-wrap ${isOwn ? 'text-white' : 'text-gray-100'}`}>{msg.content}</p>
+                  <p className={`text-[15px] break-words whitespace-pre-wrap ${isOwn ? 'text-white' : 'text-gray-100'}`}>{renderContent(msg.content, currentUser?.id ?? '', members)}</p>
                   {wasEdited && <span className={`text-[10px] ${isOwn ? 'text-indigo-200/60' : 'text-gray-600'}`}>(edited)</span>}
                   {statusIndicator}
                 </>
@@ -859,7 +931,9 @@ export default function ChannelPage() {
                   {!isOwn && (
                     isGrouped
                       ? <div className="w-8 flex-shrink-0" />
-                      : <Avatar name={msg.user?.name ?? 'Unknown'} avatarUrl={msg.user?.avatarUrl ?? undefined} size="sm" />
+                      : msgUsername
+                        ? <Link to={`/u/${msgUsername}`} className="flex-shrink-0" onClick={(e) => e.stopPropagation()}><Avatar name={msg.user?.name ?? 'Unknown'} avatarUrl={msg.user?.avatarUrl ?? undefined} size="sm" /></Link>
+                        : <Avatar name={msg.user?.name ?? 'Unknown'} avatarUrl={msg.user?.avatarUrl ?? undefined} size="sm" />
                   )}
 
                   {/* Content column */}
@@ -901,7 +975,9 @@ export default function ChannelPage() {
                   {isOwn && (
                     isGrouped
                       ? <div className="w-8 flex-shrink-0" />
-                      : <Avatar name={msg.user?.name ?? 'Unknown'} avatarUrl={msg.user?.avatarUrl ?? undefined} size="sm" />
+                      : currentUser?.username
+                        ? <Link to={`/u/${currentUser.username}`} className="flex-shrink-0" onClick={(e) => e.stopPropagation()}><Avatar name={msg.user?.name ?? 'Unknown'} avatarUrl={msg.user?.avatarUrl ?? undefined} size="sm" /></Link>
+                        : <Avatar name={msg.user?.name ?? 'Unknown'} avatarUrl={msg.user?.avatarUrl ?? undefined} size="sm" />
                   )}
                 </div>
               )
@@ -947,8 +1023,27 @@ export default function ChannelPage() {
             </div>
           )}
           <div className="px-4 pb-4 pt-2">
-          <div className="flex items-end gap-2">
+          <div className="relative flex items-end gap-2">
+            {mentionCandidates.length > 0 && (
+              <div className="absolute bottom-full left-0 right-10 mb-1 bg-gray-800 border border-gray-700 rounded-xl shadow-xl overflow-hidden z-50">
+                {mentionCandidates.map((m, i) => (
+                  <button
+                    key={m.userId}
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); applyMention(m.username!) }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                      i === mentionIndex ? 'bg-gray-700' : 'hover:bg-gray-700/50'
+                    }`}
+                  >
+                    <Avatar name={m.name} avatarUrl={m.avatarUrl ?? undefined} size="sm" />
+                    <span className="text-white font-medium">@{m.username}</span>
+                    <span className="text-gray-400 text-xs">{m.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <textarea
+              ref={textareaRef}
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
@@ -1245,7 +1340,7 @@ export default function ChannelPage() {
                       <span className="text-sm font-semibold text-white">{msg.user?.name ?? 'Unknown'}</span>
                       <span className="text-xs text-gray-500">{formatTime(msg.createdAt)}</span>
                     </div>
-                    <p className="text-sm text-gray-200 break-words whitespace-pre-wrap">{msg.content}</p>
+                    <p className="text-sm text-gray-200 break-words whitespace-pre-wrap">{renderContent(msg.content, currentUser?.id ?? '', members)}</p>
                   </div>
                   {isAdminOrOwner && (
                     <button
