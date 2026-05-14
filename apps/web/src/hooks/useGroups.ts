@@ -476,7 +476,10 @@ export function useDeleteGroupMediaAsset(groupId: string) {
   return useMutation({
     mutationFn: (assetId: string) =>
       apiFetch(`/groups/${groupId}/media/${assetId}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups', groupId, 'media'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['groups', groupId, 'media'] })
+      qc.invalidateQueries({ queryKey: ['groups', groupId, 'photos'] })
+    },
   })
 }
 

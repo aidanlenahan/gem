@@ -549,7 +549,7 @@ const createEventBodySchema = z.object({
   endsAt: z.string().datetime().optional(),
   isPrivate: z.boolean().optional(),
   maxAttendees: z.number().int().positive().optional(),
-  location: z.string().max(500).optional(),
+  location: z.string().max(200).optional(),
   tagIds: z.array(schemas.id).max(3, "You can add up to 3 tags per event").optional(),
 });
 
@@ -564,7 +564,7 @@ const updateEventBodySchema = z.object({
   endsAt: z.string().datetime().nullable().optional(),
   isPrivate: z.boolean().optional(),
   maxAttendees: z.number().int().positive().nullable().optional(),
-  location: z.string().max(500).nullable().optional(),
+  location: z.string().max(200).nullable().optional(),
   isLegendary: z.boolean().optional(),
   tagIds: z.array(schemas.id).max(3, "You can add up to 3 tags per event").optional(),
 });
@@ -730,15 +730,15 @@ const groupIdParamsSchema = z.object({
 });
 
 const createGroupBodySchema = z.object({
-  name: z.string().min(1).max(255),
-  description: z.string().max(2000).optional(),
+  name: z.string().min(1).max(60),
+  description: z.string().max(500).optional(),
   avatarUrl: z.string().url().optional(),
   betaCode: z.string().optional(),
 });
 
 const updateGroupBodySchema = z.object({
-  name: z.string().min(1).max(255).optional(),
-  description: z.string().max(2000).optional(),
+  name: z.string().min(1).max(60).optional(),
+  description: z.string().max(500).optional(),
   avatarUrl: z.string().url().nullable().optional(),
 });
 
@@ -5430,7 +5430,7 @@ app.delete("/groups/:groupId/channels/:channelId/messages/:messageId", async (re
 
 // PATCH /groups/:groupId/channels/:channelId/messages/:messageId — edit own message
 const editMessageBodySchema = z.object({
-  content: z.string().min(1).max(4000),
+  content: z.string().min(1).max(2000),
 });
 
 app.patch("/groups/:groupId/channels/:channelId/messages/:messageId", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
