@@ -214,7 +214,7 @@ export function createChatServer(
       const raw = data as { channelId: string; content: string; replyToId?: string | null };
       const { channelId, content } = raw;
       const replyToId = typeof raw.replyToId === "string" ? raw.replyToId : null;
-      const trimmed = content.trim().slice(0, 4000);
+      const trimmed = content.trim().slice(0, 2000);
       if (!trimmed) {
         socket.emit("error", { code: "BAD_REQUEST", message: "Message content is empty" });
         return;

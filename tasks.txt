@@ -19,8 +19,10 @@ Target: next cut after v0.7
 [ ] when keyboard is clicked on mobile channel: make header smaller and slide up slightly
     toward the top screen border
 
-[ ] @mention system — parse `@username` in message content on send; resolve to userId;
-    emit in-app notification to that user with a link to the message
+[x] @mention system — parse `@username` in message content on send; resolve to userId;
+    emit in-app notification to that user with a link to the message. Frontend: `@`
+    autocomplete dropdown with group member search, mention highlighting in rendered
+    messages. Backend notification fanout was already wired. DONE 2026-05-14.
 
 [ ] Message search — GET /groups/:groupId/channels/:channelId/messages?q= full-text search
     (Postgres ILIKE or to_tsvector) with a search bar in the channel header
@@ -28,7 +30,7 @@ Target: next cut after v0.7
 [ ] Member directory / search — searchable list of all active members in a group with
     avatar, name, username, and join date; accessible from GroupPage
 
-[ ] Duplicate / copy event — button on EventPage (admin/creator only) that pre-fills
+[x] Duplicate / copy event — button on EventPage (admin/creator only) that pre-fills
     CreateEventPage with all fields from the current event, letting the user adjust date
     and save as new
 
@@ -41,7 +43,7 @@ Target: next cut after v0.7
 
 [ ] pick and update favicon for all pages (browser tab, PWA icon, OG image)
 
-[ ] fix media upload with storage limits per user (per-user quota enforcement)
+[x] fix media upload with storage limits per user (per-user quota enforcement)
 
 [ ] fix sizing of event creation page on mobile
 
@@ -56,6 +58,15 @@ Target: next cut after v0.7
 
 [x] Scroll fix on marketing pages — MarketingLayout outer div changed to h-full with
     overflow-y-auto on main, fixing the iOS keyboard lock conflict. DONE 2026-05-14.
+
+[x] Admin photo delete in group media lightbox — trash button in carousel top bar (next to
+    info button) with two-step inline confirm. Calls DELETE /groups/:groupId/media/:assetId.
+    Available to owners/admins only; works in both All Photos and album views. DONE 2026-05-14.
+
+[x] Character limits across all major input fields — event title (100), event details (3000),
+    event location (200), group name (60), group description (500), channel message (2000),
+    channel name (32), photo caption (280). Enforced in Zod schemas (API) and maxLength
+    attrs (frontend). DONE 2026-05-14.
 
 === v0.9 — Planned ===
 

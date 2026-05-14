@@ -25,6 +25,7 @@ import {
   useDeleteAlbum,
   useAddToAlbum,
   useRemoveFromAlbum,
+  useDeleteGroupMediaAsset,
 } from '../hooks/useGroups'
 import type { MediaAlbum } from '../hooks/useGroups'
 import { MediaLightbox } from '../components/MediaLightbox'
@@ -169,6 +170,7 @@ export default function GroupPage() {
   const deleteAlbum = useDeleteAlbum(groupId!)
   const addToAlbum = useAddToAlbum(groupId!, selectedAlbum?.id ?? '')
   const removeFromAlbum = useRemoveFromAlbum(groupId!, selectedAlbum?.id ?? '')
+  const deleteGroupMedia = useDeleteGroupMediaAsset(groupId!)
   const { data: inviteCodeData, refetch: refetchInviteCode } = useGroupInviteCode(groupId!)
   const subscribeChannel = useSubscribeGroupChannel(groupId!)
   const unsubscribeChannel = useUnsubscribeGroupChannel(groupId!)
@@ -1200,6 +1202,7 @@ export default function GroupPage() {
               currentUserId={currentUser?.id}
               isAdmin={isAdmin}
               onSaveCaption={handleSaveCaptionGroup}
+              onDelete={isAdmin ? (assetId) => deleteGroupMedia.mutateAsync(assetId) : undefined}
             />
           )}
           {mediaSubTab === 'albums' && selectedAlbum && mediaLightboxIndex !== null && albumLightboxMedia.length > 0 && (
@@ -1210,6 +1213,7 @@ export default function GroupPage() {
               currentUserId={currentUser?.id}
               isAdmin={isAdmin}
               onSaveCaption={handleSaveCaptionGroup}
+              onDelete={isAdmin ? (assetId) => deleteGroupMedia.mutateAsync(assetId) : undefined}
             />
           )}
         </div>

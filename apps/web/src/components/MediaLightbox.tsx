@@ -39,6 +39,7 @@ export function MediaLightbox({
   currentUserId,
   isAdmin,
   onSaveCaption,
+  onDelete,
 }: {
   media: LightboxMedia[]
   initialIndex: number
@@ -46,6 +47,7 @@ export function MediaLightbox({
   currentUserId?: string
   isAdmin?: boolean
   onSaveCaption?: (assetId: string, caption: string | null) => Promise<void>
+  onDelete?: (assetId: string) => Promise<void>
 }) {
   const [index, setIndex] = useState(initialIndex)
   const [showInfo, setShowInfo] = useState(false)
@@ -53,13 +55,15 @@ export function MediaLightbox({
   const [editingCaption, setEditingCaption] = useState(false)
   const [captionDraft, setCaptionDraft] = useState('')
   const [savingCaption, setSavingCaption] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const total = media.length
   const current = media[index]
   const touchStartX = useRef<number | null>(null)
   const touchStartY = useRef<number | null>(null)
 
-  const prev = useCallback(() => { setIndex((i) => (i - 1 + total) % total); setShowInfo(false); setEditingCaption(false) }, [total])
-  const next = useCallback(() => { setIndex((i) => (i + 1) % total); setShowInfo(false); setEditingCaption(false) }, [total])
+  const prev = useCallback(() => { setIndex((i) => (i - 1 + total) % total); setShowInfo(false); setEditingCaption(false); setConfirmDelete(false) }, [total])
+  const next = useCallback(() => { setIndex((i) => (i + 1) % total); setShowInfo(false); setEditingCaption(false); setConfirmDelete(false) }, [total])
 
   const canEditCaption = !!(onSaveCaption && (isAdmin || currentUserId === current?.uploader?.id))
 
@@ -105,6 +109,18 @@ export function MediaLightbox({
     return () => { document.body.style.overflow = '' }
   }, [])
 
+  const handleDelete = async () => {
+    if (!onDelete) return
+    setDeleting(true)
+    try {
+      await onDelete(current.id)
+      onClose()
+    } finally {
+      setDeleting(false)
+      setConfirmDelete(false)
+    }
+  }
+
   const handleDownload = async () => {
     setDownloading(true)
     try {
@@ -146,6 +162,39 @@ export function MediaLightbox({
           {total > 1 ? `${index + 1} / ${total}` : ''}
         </span>
         <div className="flex items-center gap-2">
+          {isAdmin && onDelete && (
+            confirmDelete ? (
+              <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                <span className="text-xs text-red-400">Delete photo?</span>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(false)}
+                  className="text-xs px-2 py-1 rounded-lg bg-white/10 text-white/70 hover:bg-white/20 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="text-xs px-2 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors disabled:opacity-50"
+                >
+                  {deleting ? 'Deleting…' : 'Delete'}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="flex items-center justify-center w-9 h-9 rounded-full bg-white/10 text-white/70 hover:bg-red-600 hover:text-white transition-colors"
+                aria-label="Delete photo"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                  <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" />
+                </svg>
+              </button>
+            )
+          )}
           <button
             type="button"
             onClick={() => setShowInfo((s) => !s)}
