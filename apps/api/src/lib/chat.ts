@@ -47,39 +47,45 @@ interface AuthedSocket extends Socket {
   };
 }
 
-type ChatRateWindow = {
-  windowStartMs: number;
-  count: number;
-};
+// ---------------------------------------------------------------------------
+// Tiered sliding-window rate limiting
+//   Tier 1:  3 messages /  10 s  — burst guard
+//   Tier 2: 10 messages /  30 s  — sustained chat guard
+//   Tier 3: 20 messages /  60 s  — per-minute hard cap
+// ---------------------------------------------------------------------------
 
-const CHAT_RATE_LIMIT_WINDOW_MS = 60_000;
-const CHAT_MESSAGES_PER_MINUTE = Math.max(
-  1,
-  Number(process.env.CHAT_MESSAGE_RATE_LIMIT_PER_MINUTE || 30)
-);
-const chatRateWindows = new Map<string, ChatRateWindow>();
+const RATE_TIERS = [
+  { windowMs: 10_000, limit: 3 },
+  { windowMs: 30_000, limit: 10 },
+  { windowMs: 60_000, limit: 20 },
+] as const;
 
-function consumeChatQuota(userId: string) {
+const MAX_WINDOW_MS = Math.max(...RATE_TIERS.map((t) => t.windowMs));
+
+const userMessageTimestamps = new Map<string, number[]>();
+
+function consumeChatQuota(userId: string): { limited: boolean; retryAfterSeconds: number } {
   const now = Date.now();
-  const current = chatRateWindows.get(userId);
+  const timestamps = userMessageTimestamps.get(userId) ?? [];
 
-  if (!current || now - current.windowStartMs >= CHAT_RATE_LIMIT_WINDOW_MS) {
-    chatRateWindows.set(userId, {
-      windowStartMs: now,
-      count: 1,
-    });
-    return { limited: false, retryAfterSeconds: 0 };
+  // Drop timestamps outside the widest window to keep memory bounded.
+  const fresh = timestamps.filter((t) => now - t < MAX_WINDOW_MS);
+
+  for (const { windowMs, limit } of RATE_TIERS) {
+    const inWindow = fresh.filter((t) => now - t < windowMs);
+    if (inWindow.length >= limit) {
+      // Cooldown ends when the oldest timestamp in this window ages out.
+      const oldest = Math.min(...inWindow);
+      const retryAfterMs = oldest + windowMs - now;
+      return {
+        limited: true,
+        retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)),
+      };
+    }
   }
 
-  if (current.count >= CHAT_MESSAGES_PER_MINUTE) {
-    const retryAfterMs = CHAT_RATE_LIMIT_WINDOW_MS - (now - current.windowStartMs);
-    return {
-      limited: true,
-      retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)),
-    };
-  }
-
-  current.count += 1;
+  fresh.push(now);
+  userMessageTimestamps.set(userId, fresh);
   return { limited: false, retryAfterSeconds: 0 };
 }
 
@@ -93,12 +99,6 @@ export function createChatServer(
   jwtSecret: string,
   corsOrigin: string | string[],
   logger: FastifyBaseLogger,
-  onMessageCreated?: (payload: {
-    messageId: string;
-    eventId: string;
-    userId: string;
-    content: string;
-  }) => Promise<void>,
   onChannelMessageCreated?: (payload: {
     messageId: string;
     channelId: string;
@@ -143,155 +143,6 @@ export function createChatServer(
     const socket = rawSocket as AuthedSocket;
     const { user } = socket.data;
     logger.info({ userId: user.id, socketId: socket.id }, "Socket connected");
-
-    // -- join:event -----------------------------------------------------
-    socket.on("join:event", async (eventId: unknown) => {
-      if (typeof eventId !== "string") {
-        socket.emit("error", { code: "BAD_REQUEST", message: "eventId must be a string" });
-        return;
-      }
-      try {
-        const event = await prisma.event.findUnique({
-          where: { id: eventId },
-          include: { invites: true },
-        });
-        if (!event) {
-          socket.emit("error", { code: "NOT_FOUND", message: "Event not found" });
-          return;
-        }
-
-        const membership = await prisma.membership.findUnique({
-          where: { userId_groupId: { userId: user.id, groupId: event.groupId } },
-        });
-        if (!membership) {
-          socket.emit("error", { code: "FORBIDDEN", message: "Not a group member" });
-          return;
-        }
-
-        const isAdmin = ["owner", "admin"].includes(membership.role);
-        const isCreator = event.createdById === user.id;
-        const isInvited = event.invites.some((i) => i.userId === user.id);
-
-        if (event.invites.length > 0 && !isAdmin && !isCreator && !isInvited) {
-          socket.emit("error", { code: "FORBIDDEN", message: "Not invited to this event" });
-          return;
-        }
-
-        await socket.join(`event:${eventId}`);
-        socket.emit("joined:event", { eventId });
-        logger.info({ userId: user.id, eventId }, "Joined event room");
-      } catch (err) {
-        logger.error(err, "join:event error");
-        socket.emit("error", { code: "INTERNAL", message: "Failed to join room" });
-      }
-    });
-
-    // -- leave:event ----------------------------------------------------
-    socket.on("leave:event", (eventId: unknown) => {
-      if (typeof eventId !== "string") return;
-      socket.leave(`event:${eventId}`);
-      socket.emit("left:event", { eventId });
-    });
-
-    // -- message:send ---------------------------------------------------
-    socket.on("message:send", async (data: unknown) => {
-      if (
-        typeof data !== "object" ||
-        data === null ||
-        typeof (data as Record<string, unknown>).eventId !== "string" ||
-        typeof (data as Record<string, unknown>).content !== "string"
-      ) {
-        socket.emit("error", { code: "BAD_REQUEST", message: "Invalid message payload" });
-        return;
-      }
-
-      const { eventId, content } = data as { eventId: string; content: string };
-      const trimmed = content.trim().slice(0, 4000);
-
-      if (!trimmed) {
-        socket.emit("error", { code: "BAD_REQUEST", message: "Message content is empty" });
-        return;
-      }
-
-      if (!socket.rooms.has(`event:${eventId}`)) {
-        socket.emit("error", { code: "FORBIDDEN", message: "Join the event room first" });
-        return;
-      }
-
-      const quota = consumeChatQuota(user.id);
-      if (quota.limited) {
-        logger.warn(
-          { userId: user.id, eventId },
-          "Socket message rate limit exceeded"
-        );
-        socket.emit("error", {
-          code: "RATE_LIMITED",
-          message: `Too many messages. Try again in ${quota.retryAfterSeconds}s`,
-          retryAfterSeconds: quota.retryAfterSeconds,
-        });
-        return;
-      }
-
-      try {
-        // Fetch event to resolve groupId for mute check
-        const eventForMute = await prisma.event.findUnique({ where: { id: eventId }, select: { groupId: true } });
-        if (eventForMute) {
-          const muteMembership = await prisma.membership.findUnique({
-            where: { userId_groupId: { userId: user.id, groupId: eventForMute.groupId } },
-            select: { mutedUntil: true },
-          });
-          if (muteMembership?.mutedUntil && muteMembership.mutedUntil > new Date()) {
-            socket.emit("error", { code: "MUTED", message: "You are muted in this group" });
-            return;
-          }
-        }
-        const message = await prisma.message.create({
-          data: {
-            eventId,
-            userId: user.id,
-            content: trimmed,
-          },
-          include: {
-            user: { select: { id: true, name: true, email: true } },
-          },
-        });
-
-        io.to(`event:${eventId}`).emit("message:new", message);
-
-        if (onMessageCreated) {
-          await onMessageCreated({
-            messageId: message.id,
-            eventId,
-            userId: user.id,
-            content: message.content,
-          });
-        }
-      } catch (err) {
-        logger.error(err, "message:send error");
-        socket.emit("error", { code: "INTERNAL", message: "Failed to persist message" });
-      }
-    });
-
-    // -- typing:start ---------------------------------------------------
-    socket.on("typing:start", (eventId: unknown) => {
-      if (typeof eventId !== "string") return;
-      if (!socket.rooms.has(`event:${eventId}`)) return;
-      socket.to(`event:${eventId}`).emit("typing:start", {
-        userId: user.id,
-        name: user.name,
-        eventId,
-      });
-    });
-
-    // -- typing:stop ----------------------------------------------------
-    socket.on("typing:stop", (eventId: unknown) => {
-      if (typeof eventId !== "string") return;
-      if (!socket.rooms.has(`event:${eventId}`)) return;
-      socket.to(`event:${eventId}`).emit("typing:stop", {
-        userId: user.id,
-        eventId,
-      });
-    });
 
     // -- join:channel ---------------------------------------------------
     socket.on("join:channel", async (data: unknown) => {
@@ -358,7 +209,9 @@ export function createChatServer(
         socket.emit("error", { code: "BAD_REQUEST", message: "Invalid channel message payload" });
         return;
       }
-      const { channelId, content } = data as { channelId: string; content: string };
+      const raw = data as { channelId: string; content: string; replyToId?: string | null };
+      const { channelId, content } = raw;
+      const replyToId = typeof raw.replyToId === "string" ? raw.replyToId : null;
       const trimmed = content.trim().slice(0, 4000);
       if (!trimmed) {
         socket.emit("error", { code: "BAD_REQUEST", message: "Message content is empty" });
@@ -400,9 +253,11 @@ export function createChatServer(
             channelId,
             userId: user.id,
             content: trimmed,
+            ...(replyToId ? { replyToId } : {}),
           },
           include: {
             user: { select: { id: true, name: true, email: true, avatarUrl: true } },
+            replyTo: { select: { id: true, content: true, user: { select: { id: true, name: true } } } },
           },
         });
         io.to(`channel:${channelId}`).emit("channel:message:new", message);

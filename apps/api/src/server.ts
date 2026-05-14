@@ -27,6 +27,24 @@ async function verifyPassword(password: string, hash: string): Promise<boolean> 
   const storedBuf = Buffer.from(storedKey, "hex");
   return derivedKey.length === storedBuf.length && timingSafeEqual(derivedKey, storedBuf);
 }
+import multipart from "@fastify/multipart";
+import { createReadStream, readFileSync } from "fs";
+import { readFile, stat } from "fs/promises";
+import { join } from "path";
+import exifr from "exifr";
+import { imageSize } from "image-size";
+import {
+  saveUploadedFile,
+  deleteUploadedFile,
+  UPLOAD_DIR,
+  AVATAR_MAX_FILE_BYTES,
+  MEDIA_MAX_FILE_BYTES,
+  MEDIA_GLOBAL_MAX_BYTES,
+  MEDIA_GROUP_DEFAULT_LIMIT_BYTES,
+  MEDIA_GROUP_MAX_LIMIT_BYTES,
+  ALLOWED_MIME_TYPES,
+  formatBytes,
+} from "./lib/upload.js";
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Queue, Worker } from "bullmq";
@@ -45,13 +63,18 @@ import {
   HealthStatus,
 } from "./lib/health.js";
 import { createChatServer } from "./lib/chat.js";
+import type { Server as SocketIOServer } from "socket.io";
+
+// Assigned at startup after createChatServer(); route handlers run after that so
+// this is always defined by the time any request arrives.
+let chatIo: SocketIOServer | undefined;
 import {
   buildNotificationEmail,
   configureWebPushFromEnv,
   isWebPushConfigured,
   sendPushNotification,
 } from "./lib/notifications.js";
-import { getMailTransporter, isMailConfigured, sendTransactionalEmail } from "./lib/mailer.js";
+import { getMailTransporter, isMailConfigured, sendTransactionalEmail, verifyMailTransporter } from "./lib/mailer.js";
 import { buildGoogleCalendarLink, buildIcsCalendar } from "./lib/calendar.js";
 
 // Initialize clients
@@ -130,6 +153,82 @@ const notificationWorker = new Worker<NotificationFanoutJobData>(
   async (job) => {
     const data = job.data;
 
+    if (data.type !== "event_start" && data.eventId) {
+      const evt = await prisma.event.findUnique({
+        where: { id: data.eventId },
+        select: { dateTime: true },
+      });
+      if (evt && evt.dateTime < new Date()) {
+        return;
+      }
+    }
+
+    // event_start: resolve recipients from yes-RSVPers rather than all group members
+    if (data.type === "event_start" && data.eventId) {
+      const yesRsvps = await prisma.rSVP.findMany({
+        where: { eventId: data.eventId, status: "yes" },
+        select: { userId: true },
+      });
+      const rsvpUserIds = yesRsvps.map((r) => r.userId);
+      if (rsvpUserIds.length === 0) return;
+
+      const users = await prisma.user.findMany({
+        where: { id: { in: rsvpUserIds } },
+        select: { id: true, email: true },
+      });
+
+      for (const user of users) {
+        try {
+          await prisma.notificationEvent.create({
+            data: {
+              type: data.type,
+              recipientId: user.id,
+              eventId: data.eventId,
+              title: data.title,
+              body: data.body,
+              url: data.url ?? null,
+              sentAt: new Date(),
+            },
+          });
+        } catch (error) {
+          const message = (error as Error).message || "";
+          if (message.includes("NotificationEvent_eventId_fkey")) continue;
+          throw error;
+        }
+
+        const pushPref = await prisma.userNotificationPreference.findUnique({
+          where: { userId_type_channel: { userId: user.id, type: "event_start", channel: "push" } },
+        });
+        if (pushPref ? pushPref.enabled : true) {
+          const subscription = await prisma.notificationSubscription.findUnique({ where: { userId: user.id } });
+          if (subscription && isWebPushConfigured()) {
+            try {
+              await sendPushNotification(
+                { endpoint: subscription.endpoint, authSecret: subscription.authSecret, p256dh: subscription.p256dh },
+                { title: data.title, body: data.body, url: data.url, eventId: data.eventId, type: data.type }
+              );
+            } catch (error) {
+              const statusCode = (error as { statusCode?: number }).statusCode;
+              if (statusCode === 404 || statusCode === 410) {
+                await prisma.notificationSubscription.delete({ where: { userId: user.id } });
+              }
+            }
+          }
+        }
+
+        const emailPref = await prisma.userNotificationPreference.findUnique({
+          where: { userId_type_channel: { userId: user.id, type: "event_start", channel: "email" } },
+        });
+        if ((emailPref ? emailPref.enabled : true) && isMailConfigured()) {
+          const webBase = (process.env.WEB_BASE_URL || "").replace(/\/$/, "");
+          const ctaUrl = data.eventId ? `${webBase}/events/${data.eventId}` : webBase || undefined;
+          const email = buildNotificationEmail({ title: data.title, body: data.body, ctaUrl });
+          await sendTransactionalEmail({ to: user.email, subject: data.title, html: email.html, text: email.text });
+        }
+      }
+      return;
+    }
+
     const memberships = await prisma.membership.findMany({
       where: { groupId: data.groupId },
       select: { userId: true },
@@ -147,17 +246,38 @@ const notificationWorker = new Worker<NotificationFanoutJobData>(
       recipientIds = new Set(data.recipientUserIds.filter((userId) => baseRecipients.has(userId)));
     }
 
-    if (Array.isArray(data.tagIds) && data.tagIds.length > 0) {
-      const prefs = await prisma.userTagPreference.findMany({
+    const isEventNotification = data.type === "event_created" || data.type === "event_changed";
+    const hasNoTags = !Array.isArray(data.tagIds) || data.tagIds.length === 0;
+
+    if (isEventNotification && hasNoTags) {
+      // Exclude members who opted out of untagged event notifications for this group
+      const optedOut = await prisma.membership.findMany({
         where: {
           userId: { in: Array.from(recipientIds) },
-          tagId: { in: data.tagIds },
-          subscribed: true,
+          groupId: data.groupId,
+          notifyUntaggedEvents: false,
         },
         select: { userId: true },
       });
-
-      recipientIds = new Set(prefs.map((pref) => pref.userId));
+      for (const { userId } of optedOut) recipientIds.delete(userId);
+    } else if (Array.isArray(data.tagIds) && data.tagIds.length > 0) {
+      // Default is subscribed — exclude users who explicitly opted out of ALL the event's tags
+      const optedOut = await prisma.userTagPreference.findMany({
+        where: {
+          userId: { in: Array.from(recipientIds) },
+          tagId: { in: data.tagIds },
+          subscribed: false,
+        },
+        select: { userId: true, tagId: true },
+      });
+      const optOutByUser = new Map<string, Set<string>>();
+      for (const { userId, tagId } of optedOut) {
+        if (!optOutByUser.has(userId)) optOutByUser.set(userId, new Set());
+        optOutByUser.get(userId)!.add(tagId);
+      }
+      for (const [userId, tags] of optOutByUser) {
+        if (data.tagIds.every((id) => tags.has(id))) recipientIds.delete(userId);
+      }
     }
 
     // Filter out recipients who have muted the actor
@@ -229,6 +349,7 @@ const notificationWorker = new Worker<NotificationFanoutJobData>(
               {
                 title: data.title,
                 body: data.body,
+                url: data.url,
                 eventId: data.eventId,
                 type: data.type,
               }
@@ -355,7 +476,6 @@ const app = Fastify({
     },
   },
   trustProxy: 1,
-                url: data.url,
 });
 
 const sentryDsn = process.env.SENTRY_DSN_API || process.env.SENTRY_DSN;
@@ -476,6 +596,7 @@ const registerBodySchema = z.object({
     "Password must have at least one uppercase letter, one lowercase letter, and one number"
   ),
   betaCode: z.string().min(1).max(100).optional(),
+  inviteToken: z.string().min(1).max(64).optional(),
 });
 
 const loginBodySchema = z.object({
@@ -486,6 +607,10 @@ const loginBodySchema = z.object({
 const verifyEmailBodySchema = z.object({
   userId: schemas.id,
   code: z.string().length(6).regex(/^\d{6}$/),
+});
+
+const verifyEmailLinkBodySchema = z.object({
+  token: z.string().min(64).max(64),
 });
 
 const resendVerificationBodySchema = z.object({
@@ -523,15 +648,6 @@ const resetPasswordBodySchema = z.object({
   ),
 });
 
-const messageParamsSchema = z.object({
-  id: schemas.id,
-  messageId: schemas.id,
-});
-
-const messageListQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-  before: schemas.id.optional(),
-});
 
 const notificationSubscribeBodySchema = z.object({
   endpoint: z.string().url(),
@@ -696,25 +812,10 @@ const channelMessagesQuerySchema = z.object({
   before: schemas.id.optional(),
 });
 
-const reactionBodySchema = z.object({
-  emoji: z.string().min(1).max(32),
-});
-
-const reactionParamsSchema = z.object({
-  id: schemas.id,
-  messageId: schemas.id,
-  emoji: z.string().min(1).max(32),
-});
-
-const reactionAddParamsSchema = z.object({
-  id: schemas.id,
-  messageId: schemas.id,
-});
-
 const notificationPreferencesBodySchema = z.array(
   z.object({
-    type: z.enum(["chat_message", "event_created", "event_changed", "invite", "rsvp_update"]),
-    channel: z.enum(["push", "email"]),
+    type: z.enum(["chat_message", "event_created", "event_changed", "invite", "rsvp_update", "event_start"]),
+    channel: z.enum(["push", "email", "in_app"]),
     enabled: z.boolean(),
   })
 );
@@ -728,7 +829,7 @@ const eventTagsBodySchema = z.object({
 });
 
 type NotificationFanoutJobData = {
-  type: "chat_message" | "event_created" | "event_changed" | "invite" | "rsvp_update";
+  type: "chat_message" | "event_created" | "event_changed" | "invite" | "rsvp_update" | "event_start";
   groupId: string;
   actorUserId?: string;
   eventId?: string;
@@ -756,6 +857,33 @@ async function queueCalendarSync(
     reason,
     eventId,
   });
+}
+
+async function scheduleEventStartNotification(event: { id: string; groupId: string; title: string; dateTime: Date }) {
+  const jobId = `event-start-${event.id}`;
+  const delay = event.dateTime.getTime() - Date.now();
+  if (delay <= 0) return;
+
+  const existing = await notificationQueue.getJob(jobId);
+  if (existing) await existing.remove();
+
+  await notificationQueue.add(
+    "fanout",
+    {
+      type: "event_start",
+      groupId: event.groupId,
+      eventId: event.id,
+      title: event.title,
+      body: "Your event is starting now!",
+      url: `/events/${event.id}`,
+    },
+    { jobId, delay }
+  );
+}
+
+async function cancelEventStartNotification(eventId: string) {
+  const existing = await notificationQueue.getJob(`event-start-${eventId}`);
+  if (existing) await existing.remove();
 }
 
 async function getCalendarSyncMeta(groupId: string) {
@@ -798,6 +926,14 @@ await app.register(rateLimit, {
   global: false,
   redis,
   keyGenerator: (request) => (request as any).user?.id ?? request.ip,
+});
+
+await app.register(multipart, {
+  limits: {
+    fileSize: MEDIA_MAX_FILE_BYTES,
+    files: 1,
+    fields: 0,
+  },
 });
 
 // Attach clients to app context for route handlers
@@ -951,6 +1087,7 @@ app.get("/", async (request, reply) => {
       "/events/:id/calendar/google-link",
       "/groups/:groupId/calendar.ics",
       "/calendar/group-feed/:token.ics",
+      "/calendar/user-feed/:token.ics",
       "/calendar/sync/webhook",
     ],
   });
@@ -1102,8 +1239,23 @@ app.post("/auth/register", { config: { rateLimit: { max: 10, timeWindow: "1 minu
     return reply.status(409).send({ error: "Email already in use", code: "EMAIL_TAKEN" });
   }
 
-  // Invite code check
-  if (registrationBetaRequired) {
+  // Validate invite link token if provided (independent of the beta gate)
+  if (body.inviteToken) {
+    const inviteLink = await prisma.betaCode.findUnique({ where: { code: body.inviteToken } });
+    if (!inviteLink || inviteLink.type !== "invite_link") {
+      return reply.status(403).send({ error: "Invalid invite link", code: "INVITE_LINK_INVALID" });
+    }
+    if (inviteLink.expiresAt && inviteLink.expiresAt < new Date()) {
+      return reply.status(403).send({ error: "This invite link has expired", code: "INVITE_LINK_EXPIRED" });
+    }
+    if (inviteLink.singleUse && inviteLink.usedAt !== null) {
+      return reply.status(403).send({ error: "This invite link has already been used", code: "INVITE_LINK_USED" });
+    }
+    (request as any)._inviteLinkId = inviteLink.id;
+  }
+
+  // Invite code check (typed beta codes — only enforced when gate is on)
+  if (registrationBetaRequired && !body.inviteToken) {
     if (!body.betaCode) {
       return reply.status(403).send({
         error: "An invite code is required to register",
@@ -1170,6 +1322,15 @@ app.post("/auth/register", { config: { rateLimit: { max: 10, timeWindow: "1 minu
       });
     }
 
+    // Record first use of an invite link (for tracking; enforces single-use on next attempt)
+    const inviteLinkId = (request as any)._inviteLinkId;
+    if (inviteLinkId) {
+      await tx.betaCode.updateMany({
+        where: { id: inviteLinkId, usedAt: null },
+        data: { usedById: newUser.id, usedAt: new Date() },
+      });
+    }
+
     return newUser;
   });
 
@@ -1177,11 +1338,23 @@ app.post("/auth/register", { config: { rateLimit: { max: 10, timeWindow: "1 minu
   const otpCode = generateOtpCode();
   await redis.setex(`verify:email:${user.id}`, 600, otpCode);
 
+  // Magic link token valid for 24 hours
+  const verifyLinkToken = randomBytes(32).toString("hex");
+  await redis.setex(`verify:link:${verifyLinkToken}`, 86400, user.id);
+  const verifyUrl = new URL(`${(process.env.WEB_BASE_URL || "").replace(/\/$/, "")}/verify-email`);
+  verifyUrl.searchParams.set("userId", user.id);
+  verifyUrl.searchParams.set("token", verifyLinkToken);
+
   await sendEmailCode(
     user.email,
     otpCode,
     "Verify your Gem account",
-    "Enter this code to verify your email address:"
+    "Enter this code to verify your email address:",
+    {
+      actionUrl: verifyUrl.toString(),
+      actionLabel: "Verify email",
+      actionText: "Or click to verify instantly:",
+    }
   );
 
   return reply.status(201).send({
@@ -1212,6 +1385,37 @@ app.post("/auth/verify-email", { config: { rateLimit: { max: 20, timeWindow: "1 
   return reply.send({ token, user: { ...user, isAdmin: ADMIN_EMAILS.includes(user.email.toLowerCase()) } });
 });
 
+app.post("/auth/verify-email-link", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
+  const body = await validateRequest(verifyEmailLinkBodySchema, request.body);
+
+  const userId = await redis.get(`verify:link:${body.token}`);
+  if (!userId) {
+    return reply.status(400).send({ error: "Invalid or expired verification link", code: "INVALID_LINK" });
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, name: true, username: true, avatarUrl: true, theme: true, emailVerified: true },
+  });
+  if (!user) {
+    return reply.status(400).send({ error: "Invalid or expired verification link", code: "INVALID_LINK" });
+  }
+
+  if (!user.emailVerified) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { emailVerified: true, emailVerificationToken: null },
+    });
+    await redis.del(`verify:email:${user.id}`);
+    await redis.del(`verify:cooldown:${user.id}`);
+  }
+  await redis.del(`verify:link:${body.token}`);
+
+  const { emailVerified: _ev, ...safeUser } = user;
+  const token = await reply.jwtSign({ sub: safeUser.id, email: safeUser.email }, { expiresIn: jwtExpiresIn });
+  return reply.send({ token, user: { ...safeUser, isAdmin: ADMIN_EMAILS.includes(safeUser.email.toLowerCase()) } });
+});
+
 app.post("/auth/resend-verification", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
   const body = await validateRequest(resendVerificationBodySchema, request.body);
 
@@ -1237,11 +1441,22 @@ app.post("/auth/resend-verification", { config: { rateLimit: { max: 10, timeWind
   await redis.setex(`verify:email:${body.userId}`, 600, otpCode);
   await redis.setex(`verify:cooldown:${body.userId}`, 60, "1");
 
+  const verifyLinkToken = randomBytes(32).toString("hex");
+  await redis.setex(`verify:link:${verifyLinkToken}`, 86400, body.userId);
+  const verifyUrl = new URL(`${(process.env.WEB_BASE_URL || "").replace(/\/$/, "")}/verify-email`);
+  verifyUrl.searchParams.set("userId", body.userId);
+  verifyUrl.searchParams.set("token", verifyLinkToken);
+
   await sendEmailCode(
     user.email,
     otpCode,
     "Verify your Gem account",
-    "Enter this code to verify your email address:"
+    "Enter this code to verify your email address:",
+    {
+      actionUrl: verifyUrl.toString(),
+      actionLabel: "Verify email",
+      actionText: "Or click to verify instantly:",
+    }
   );
 
   return reply.send({ message: "Verification code resent" });
@@ -1687,7 +1902,7 @@ app.get("/notifications/preferences/tags", async (request, reply) => {
     preferences: tags.map((tag) => ({
       tagId: tag.id,
       tagName: tag.name,
-      subscribed: prefMap.get(tag.id) ?? false,
+      subscribed: prefMap.get(tag.id) ?? true,
     })),
   });
 });
@@ -1734,255 +1949,341 @@ app.put("/notifications/preferences/tags/:tagId", { config: { rateLimit: { max: 
   });
 });
 
-// ============================================================================
-// Media Routes (Phase 6)
-// ============================================================================
-
-app.post("/media/upload-url", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
+app.get("/notifications/preferences/groups/:groupId/untagged", async (request, reply) => {
   const currentUser = await requireAuth(request, reply, prisma);
-  const body = await validateRequest(mediaUploadUrlBodySchema, request.body);
+  const params = request.params as { groupId: string };
 
-  const access = await canAccessEvent(prisma, body.eventId, currentUser.id);
+  const membership = await prisma.membership.findUnique({
+    where: { userId_groupId: { userId: currentUser.id, groupId: params.groupId } },
+    select: { notifyUntaggedEvents: true },
+  });
 
-  if (body.sizeBytes > mediaMaxFileBytes) {
-    return reply.status(413).send({
-      error: `File exceeds per-file limit of ${mediaMaxFileBytes} bytes`,
-      code: "FILE_TOO_LARGE",
-    });
+  if (!membership) {
+    return reply.status(404).send({ error: "Membership not found", code: "NOT_FOUND" });
   }
 
-  // Images only
-  if (!allowedMediaMimeTypes.has(body.mimeType)) {
-    return reply.status(415).send({
-      error: "Only image files are allowed (JPEG, PNG, GIF, WebP, HEIC, AVIF)",
-      code: "UNSUPPORTED_MEDIA_TYPE",
-    });
-  }
-
-  // Per-user file count check (max 100 photos)
-  const userFileCount = await prisma.mediaAsset.count({
-    where: { uploaderId: currentUser.id },
-  });
-  if (userFileCount >= mediaMaxUserFiles) {
-    return reply.status(413).send({
-      error: `You have reached the maximum of ${mediaMaxUserFiles} photos`,
-      code: "USER_MEDIA_FILE_LIMIT_EXCEEDED",
-    });
-  }
-
-  const usage = await prisma.mediaAsset.aggregate({
-    where: { eventId: body.eventId },
-    _sum: { sizeBytes: true },
-  });
-  const currentEventBytes = usage._sum.sizeBytes ?? 0;
-
-  if (currentEventBytes + body.sizeBytes > mediaMaxEventBytes) {
-    return reply.status(413).send({
-      error: `Event media quota exceeded (${mediaMaxEventBytes} bytes)` ,
-      code: "EVENT_MEDIA_QUOTA_EXCEEDED",
-    });
-  }
-
-  // Per-user total storage quota
-  const userUsage = await prisma.mediaAsset.aggregate({
-    where: { uploaderId: currentUser.id },
-    _sum: { sizeBytes: true },
-  });
-  const currentUserBytes = userUsage._sum.sizeBytes ?? 0;
-  if (currentUserBytes + body.sizeBytes > mediaMaxUserBytes) {
-    return reply.status(413).send({
-      error: "Your personal storage quota has been exceeded",
-      code: "USER_MEDIA_QUOTA_EXCEEDED",
-    });
-  }
-
-  const safeName = body.filename.replace(/[^a-zA-Z0-9._-]/g, "-");
-  const objectKey = `${access.event.id}/${Date.now()}-${randomUUID()}-${safeName}`;
-
-  const putCommand = new PutObjectCommand({
-    Bucket: s3Bucket,
-    Key: objectKey,
-    ACL: "private",
-    ContentType: body.mimeType,
-    ContentLength: body.sizeBytes,
-  });
-
-  const uploadUrl = await getSignedUrl(s3, putCommand, {
-    expiresIn: uploadUrlTtlSeconds,
-  });
-
-  return reply.send({
-    uploadUrl,
-    objectKey,
-    expiresInSeconds: uploadUrlTtlSeconds,
-    requiredHeaders: {
-      "Content-Type": body.mimeType,
-    },
-  });
+  return reply.send({ notifyUntaggedEvents: membership.notifyUntaggedEvents });
 });
 
-app.post("/media/complete", async (request, reply) => {
+app.put("/notifications/preferences/groups/:groupId/untagged", { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (request, reply) => {
   const currentUser = await requireAuth(request, reply, prisma);
-  const body = await validateRequest(mediaCompleteBodySchema, request.body);
+  const params = request.params as { groupId: string };
+  const body = request.body as { notifyUntaggedEvents: boolean };
 
-  const access = await canAccessEvent(prisma, body.eventId, currentUser.id);
-
-  if (!body.objectKey.startsWith(`${body.eventId}/`)) {
-    return reply.status(400).send({
-      error: "objectKey must be scoped to the event",
-      code: "INVALID_OBJECT_KEY",
-    });
-  }
-
-  if (body.sizeBytes > mediaMaxFileBytes) {
-    return reply.status(413).send({
-      error: `File exceeds per-file limit of ${mediaMaxFileBytes} bytes`,
-      code: "FILE_TOO_LARGE",
-    });
-  }
-
-  // Images only (double-check at commit time)
-  if (!allowedMediaMimeTypes.has(body.mimeType)) {
-    return reply.status(415).send({
-      error: "Only image files are allowed (JPEG, PNG, GIF, WebP, HEIC, AVIF)",
-      code: "UNSUPPORTED_MEDIA_TYPE",
-    });
-  }
-
-  // Per-user file count (double-check at commit time)
-  const userFileCount = await prisma.mediaAsset.count({
-    where: { uploaderId: currentUser.id },
+  const membership = await prisma.membership.findUnique({
+    where: { userId_groupId: { userId: currentUser.id, groupId: params.groupId } },
   });
-  if (userFileCount >= mediaMaxUserFiles) {
-    return reply.status(413).send({
-      error: `You have reached the maximum of ${mediaMaxUserFiles} photos`,
-      code: "USER_MEDIA_FILE_LIMIT_EXCEEDED",
-    });
+
+  if (!membership) {
+    return reply.status(404).send({ error: "Membership not found", code: "NOT_FOUND" });
   }
 
-  const usage = await prisma.mediaAsset.aggregate({
-    where: { eventId: body.eventId },
+  await prisma.membership.update({
+    where: { userId_groupId: { userId: currentUser.id, groupId: params.groupId } },
+    data: { notifyUntaggedEvents: body.notifyUntaggedEvents },
+  });
+
+  return reply.send({ notifyUntaggedEvents: body.notifyUntaggedEvents });
+});
+
+// ============================================================================
+// Media Routes — local file storage
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+async function isMediaUploadGloballyEnabled(): Promise<boolean> {
+  const val = await redis.get("admin:media_upload_enabled");
+  return val === "true";
+}
+
+async function getGroupMediaSettings(groupId: string) {
+  return prisma.group.findUnique({
+    where: { id: groupId },
+    select: {
+      mediaUploadEnabled: true,
+      mediaStorageLimitBytes: true,
+      mediaUploadNonAdminEnabled: true,
+    },
+  });
+}
+
+async function getGroupMediaUsedBytes(groupId: string): Promise<number> {
+  const result = await prisma.mediaAsset.aggregate({
+    where: { event: { groupId } },
     _sum: { sizeBytes: true },
   });
-  const currentEventBytes = usage._sum.sizeBytes ?? 0;
+  return result._sum.sizeBytes ?? 0;
+}
 
-  if (currentEventBytes + body.sizeBytes > mediaMaxEventBytes) {
-    return reply.status(413).send({
-      error: `Event media quota exceeded (${mediaMaxEventBytes} bytes)`,
-      code: "EVENT_MEDIA_QUOTA_EXCEEDED",
-    });
+async function getGlobalMediaUsedBytes(): Promise<number> {
+  const result = await prisma.mediaAsset.aggregate({ _sum: { sizeBytes: true } });
+  return result._sum.sizeBytes ?? 0;
+}
+
+// ---------------------------------------------------------------------------
+// GET /uploads/* — serve local media files
+// ---------------------------------------------------------------------------
+
+app.get("/uploads/*", async (request, reply) => {
+  const relativePath = (request.params as Record<string, string>)["*"];
+  if (!relativePath || relativePath.includes("..")) {
+    return reply.status(400).send({ error: "Invalid path" });
   }
 
-  // Per-user total storage quota (double-check at commit time)
-  const userUsage = await prisma.mediaAsset.aggregate({
-    where: { uploaderId: currentUser.id },
-    _sum: { sizeBytes: true },
-  });
-  const currentUserBytes = userUsage._sum.sizeBytes ?? 0;
-  if (currentUserBytes + body.sizeBytes > mediaMaxUserBytes) {
-    return reply.status(413).send({
-      error: "Your personal storage quota has been exceeded",
-      code: "USER_MEDIA_QUOTA_EXCEEDED",
-    });
+  const absPath = join(UPLOAD_DIR, relativePath);
+  try {
+    const fileStat = await stat(absPath);
+    if (!fileStat.isFile()) return reply.status(404).send({ error: "Not found" });
+
+    // Derive MIME from extension stored in filename (set from signature at upload time)
+    const ext = absPath.split(".").pop()?.toLowerCase() ?? "";
+    const mimeMap: Record<string, string> = {
+      jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp",
+    };
+    const contentType = mimeMap[ext] ?? "application/octet-stream";
+
+    reply.header("Content-Type", contentType);
+    reply.header("Content-Length", fileStat.size);
+    reply.header("Cache-Control", "public, max-age=31536000, immutable");
+    // Allow cross-origin image loading (overrides helmet's same-origin default)
+    reply.header("Cross-Origin-Resource-Policy", "cross-origin");
+    return reply.send(createReadStream(absPath));
+  } catch {
+    return reply.status(404).send({ error: "Not found" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /users/me/avatar — upload profile photo (replaces presigned URL flow)
+// Overwrites the previous avatar file for the user.
+// ---------------------------------------------------------------------------
+
+app.post("/users/me/avatar", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+
+  const data = await request.file();
+  if (!data) return reply.status(400).send({ error: "No file uploaded", code: "NO_FILE" });
+
+  let saved;
+  try {
+    saved = await saveUploadedFile(data.file, `avatars`, AVATAR_MAX_FILE_BYTES);
+  } catch (err: any) {
+    if (err.code === "FILE_TOO_LARGE") {
+      return reply.status(413).send({ error: `Profile photo must be under ${formatBytes(AVATAR_MAX_FILE_BYTES)}`, code: "FILE_TOO_LARGE" });
+    }
+    if (err.code === "INVALID_IMAGE") {
+      return reply.status(415).send({ error: "Only JPEG, PNG, or WebP images are allowed.", code: "INVALID_IMAGE" });
+    }
+    throw err;
   }
 
-  const baseUrl = (process.env.S3_PUBLIC_BASE_URL || process.env.S3_ENDPOINT || "")
-    .replace(/\/$/, "");
-  const publicUrl = `${baseUrl}/${s3Bucket}/${body.objectKey}`;
+  // Delete old avatar file if it was a local upload (URL may be absolute or relative)
+  const existingUser = await prisma.user.findUnique({ where: { id: currentUser.id }, select: { avatarUrl: true } });
+  if (existingUser?.avatarUrl) {
+    const oldPath = existingUser.avatarUrl.replace(/^https?:\/\/[^/]+/, "");
+    if (oldPath.startsWith("/uploads/")) deleteUploadedFile(oldPath);
+  }
+
+  const publicBase = (process.env.API_BASE_URL || process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+  const avatarUrl = `${publicBase}${saved.urlPath}`;
+
+  await prisma.user.update({ where: { id: currentUser.id }, data: { avatarUrl } });
+
+  return reply.status(201).send({ avatarUrl });
+});
+
+// POST /media/avatar-upload-url — legacy endpoint, now returns 410
+app.post("/media/avatar-upload-url", async (_request, reply) => {
+  return reply.status(410).send({ error: "This endpoint has been replaced. Use POST /users/me/avatar with multipart/form-data.", code: "GONE" });
+});
+
+// ---------------------------------------------------------------------------
+// EXIF extraction helper — reads JPEG/PNG/WebP EXIF tags and image dimensions.
+// Returns null on any failure (missing EXIF is normal for screenshots/PNGs).
+// ---------------------------------------------------------------------------
+
+interface ExtractedExif {
+  width: number | null
+  height: number | null
+  exifData: Record<string, unknown> | null
+}
+
+async function extractImageMeta(filePath: string, mimeType: string): Promise<ExtractedExif> {
+  let width: number | null = null
+  let height: number | null = null
+  let exifData: Record<string, unknown> | null = null
+
+  try {
+    const buf = await readFile(filePath)
+
+    // Pixel dimensions via image-size (works for all three formats)
+    try {
+      const dims = imageSize(buf)
+      width = dims.width ?? null
+      height = dims.height ?? null
+    } catch { /* non-critical */ }
+
+    // EXIF metadata (mainly useful for JPEGs from cameras/phones)
+    if (mimeType === "image/jpeg" || mimeType === "image/webp") {
+      try {
+        const raw = await exifr.parse(buf, {
+          tiff: true, exif: true, gps: true, icc: false, iptc: false,
+          pick: [
+            "DateTimeOriginal", "CreateDate", "Make", "Model",
+            "LensModel", "FocalLength", "FNumber", "ExposureTime",
+            "ISO", "ISOSpeedRatings", "Flash", "WhiteBalance",
+            "Orientation", "ImageWidth", "ImageHeight",
+            "ExifImageWidth", "ExifImageHeight",
+            "GPSLatitude", "GPSLongitude", "GPSAltitude",
+            "GPSLatitudeRef", "GPSLongitudeRef",
+            "Software", "Artist", "Copyright",
+          ],
+        })
+        if (raw && typeof raw === "object") {
+          const exif: Record<string, unknown> = {}
+          for (const [k, v] of Object.entries(raw)) {
+            if (v !== undefined && v !== null) {
+              // Serialize Dates and plain values; skip binary buffers
+              if (v instanceof Date) exif[k] = v.toISOString()
+              else if (typeof v !== "object" || Array.isArray(v)) exif[k] = v
+              // GPS objects (lat/lng as objects) — flatten to string
+              else exif[k] = String(v)
+            }
+          }
+          if (Object.keys(exif).length > 0) exifData = exif
+        }
+      } catch { /* no EXIF is normal */ }
+    }
+  } catch { /* file read error is non-critical for uploads */ }
+
+  return { width, height, exifData }
+}
+
+// ---------------------------------------------------------------------------
+// POST /events/:eventId/media — upload a photo to an event (group media)
+// ---------------------------------------------------------------------------
+
+app.post("/events/:eventId/media", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const { eventId } = request.params as { eventId: string };
+
+  // Global gate
+  if (!(await isMediaUploadGloballyEnabled())) {
+    return reply.status(403).send({ error: "Media uploads are not enabled on this server.", code: "MEDIA_DISABLED" });
+  }
+
+  const access = await canAccessEvent(prisma, eventId, currentUser.id);
+  const groupId = access.event.groupId;
+
+  // Group-level gate
+  const groupSettings = await getGroupMediaSettings(groupId);
+  if (!groupSettings?.mediaUploadEnabled) {
+    return reply.status(403).send({ error: "Media uploads are disabled for this group.", code: "GROUP_MEDIA_DISABLED" });
+  }
+  if (!groupSettings.mediaUploadNonAdminEnabled && !access.isAdmin) {
+    return reply.status(403).send({ error: "Only group admins can upload media in this group.", code: "ADMIN_ONLY_UPLOAD" });
+  }
+
+  // Global 20 GB hard cap
+  const globalUsed = await getGlobalMediaUsedBytes();
+  if (globalUsed >= MEDIA_GLOBAL_MAX_BYTES) {
+    return reply.status(507).send({ error: "Server storage limit reached. Contact an administrator.", code: "GLOBAL_STORAGE_FULL" });
+  }
+
+  // Group storage cap
+  const groupLimitBytes = Number(groupSettings.mediaStorageLimitBytes);
+  const groupUsed = await getGroupMediaUsedBytes(groupId);
+  if (groupUsed >= groupLimitBytes) {
+    return reply.status(507).send({ error: `This group's storage limit of ${formatBytes(groupLimitBytes)} has been reached.`, code: "GROUP_STORAGE_FULL" });
+  }
+
+  const fileData = await request.file();
+  if (!fileData) return reply.status(400).send({ error: "No file uploaded", code: "NO_FILE" });
+
+  let saved;
+  try {
+    // Remaining space is minimum of (global cap - used) and (group cap - group used)
+    const remaining = Math.min(MEDIA_GLOBAL_MAX_BYTES - globalUsed, groupLimitBytes - groupUsed);
+    saved = await saveUploadedFile(fileData.file, `media/${eventId}`, Math.min(MEDIA_MAX_FILE_BYTES, remaining));
+  } catch (err: any) {
+    if (err.code === "FILE_TOO_LARGE") {
+      return reply.status(413).send({ error: `File exceeds ${formatBytes(MEDIA_MAX_FILE_BYTES)} limit`, code: "FILE_TOO_LARGE" });
+    }
+    if (err.code === "INVALID_IMAGE") {
+      return reply.status(415).send({ error: "Only JPEG, PNG, or WebP images are allowed.", code: "INVALID_IMAGE" });
+    }
+    throw err;
+  }
+
+  const publicBase = (process.env.API_BASE_URL || process.env.PUBLIC_BASE_URL || "").replace(/\/$/, "");
+  const url = `${publicBase}${saved.urlPath}`;
+
+  const { width, height, exifData } = await extractImageMeta(saved.path, saved.mimeType);
 
   const mediaAsset = await prisma.mediaAsset.create({
     data: {
-      eventId: access.event.id,
+      eventId,
       uploaderId: currentUser.id,
-      url: publicUrl,
-      filename: body.filename,
-      sizeBytes: body.sizeBytes,
-      mimeType: body.mimeType,
+      url,
+      filename: fileData.filename || `upload.${saved.mimeType.split("/")[1]}`,
+      sizeBytes: saved.sizeBytes,
+      mimeType: saved.mimeType,
+      width,
+      height,
+      exifData: exifData !== null ? (exifData as object) : undefined,
     },
   });
 
   return reply.status(201).send({ mediaAsset });
 });
 
-// POST /media/avatar-upload-url — generate a presigned URL for uploading a user avatar
-app.post("/media/avatar-upload-url", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
-  const currentUser = await requireAuth(request, reply, prisma);
-  const body = await validateRequest(avatarUploadUrlBodySchema, request.body);
-
-  const ext = body.filename.split(".").pop()?.replace(/[^a-zA-Z0-9]/g, "") ?? "jpg";
-  const objectKey = `avatars/${currentUser.id}/${Date.now()}-${randomUUID()}.${ext}`;
-
-  const putCommand = new PutObjectCommand({
-    Bucket: s3Bucket,
-    Key: objectKey,
-    ACL: "private",
-    ContentType: body.contentType,
-  });
-
-  const uploadUrl = await getSignedUrl(s3, putCommand, { expiresIn: uploadUrlTtlSeconds });
-  const baseUrl = (process.env.S3_PUBLIC_BASE_URL || process.env.S3_ENDPOINT || "").replace(/\/$/, "");
-  const publicUrl = `${baseUrl}/${s3Bucket}/${objectKey}`;
-
-  return reply.send({ uploadUrl, publicUrl, objectKey });
+// POST /media/upload-url — legacy endpoint, now returns 410
+app.post("/media/upload-url", async (_request, reply) => {
+  return reply.status(410).send({ error: "This endpoint has been replaced. Use POST /events/:eventId/media with multipart/form-data.", code: "GONE" });
 });
 
-// GET /media/proxy/* — proxy media objects from S3/MinIO through the API
-// Needed for mobile and cross-network access where MinIO is not directly reachable.
-app.get("/media/proxy/*", async (request, reply) => {
-  const fullPath = (request.params as Record<string, string>)["*"];
-  if (!fullPath) {
-    return reply.status(400).send({ error: "Invalid media path" });
-  }
-
-  const [bucket, ...keyParts] = fullPath.split("/");
-  const key = keyParts.join("/");
-
-  if (!bucket || !key) {
-    return reply.status(400).send({ error: "Invalid media path" });
-  }
-
-  // Security: only allow access to the configured bucket and avatars prefix
-  if (bucket !== s3Bucket || !key.startsWith("avatars/")) {
-    return reply.status(403).send({ error: "Access denied" });
-  }
-
-  try {
-    const object = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-    reply.type(object.ContentType || "application/octet-stream");
-    if (object.ContentLength) {
-      reply.header("Content-Length", object.ContentLength);
-    }
-    reply.header("Cache-Control", "public, max-age=31536000");
-    return reply.send(object.Body);
-  } catch (err) {
-    if ((err as { name?: string }).name === "NoSuchKey") {
-      return reply.status(404).send({ error: "Not found" });
-    }
-    app.log.error({ err }, "Error proxying media object");
-    return reply.status(500).send({ error: "Failed to proxy media" });
-  }
+// POST /media/complete — legacy endpoint, now returns 410
+app.post("/media/complete", async (_request, reply) => {
+  return reply.status(410).send({ error: "This endpoint has been replaced. Use POST /events/:eventId/media with multipart/form-data.", code: "GONE" });
 });
+
+// GET /media/proxy/* — legacy proxy route, now returns 410
+app.get("/media/proxy/*", async (_request, reply) => {
+  return reply.status(410).send({ error: "Media is now served directly. Use /uploads/* paths.", code: "GONE" });
+});
+
+// ---------------------------------------------------------------------------
+// GET /events/:id/media — list media for an event
+// ---------------------------------------------------------------------------
 
 app.get("/events/:id/media", async (request, reply) => {
   const currentUser = await requireAuth(request, reply, prisma);
   const params = await validateRequest(updateEventParamsSchema, request.params);
   const query = await validateRequest(mediaListQuerySchema, request.query);
 
-  await canAccessEvent(prisma, params.id, currentUser.id);
+  const access = await canAccessEvent(prisma, params.id, currentUser.id);
 
   const media = await prisma.mediaAsset.findMany({
     where: { eventId: params.id },
     include: {
-      uploader: {
-        select: { id: true, name: true, email: true },
-      },
+      uploader: { select: { id: true, name: true, avatarUrl: true } },
       likes: { select: { userId: true } },
     },
     orderBy: { createdAt: "desc" },
     take: query.limit,
   });
 
-  const totalBytes = media.reduce((acc, item) => acc + item.sizeBytes, 0);
+  const groupSettings = await getGroupMediaSettings(access.event.groupId);
+  const groupLimitBytes = Number(groupSettings?.mediaStorageLimitBytes ?? MEDIA_GROUP_DEFAULT_LIMIT_BYTES);
+  const groupUsedBytes = await getGroupMediaUsedBytes(access.event.groupId);
+  const globalEnabled = await isMediaUploadGloballyEnabled();
+  const canUpload =
+    globalEnabled &&
+    (groupSettings?.mediaUploadEnabled ?? false) &&
+    (groupSettings?.mediaUploadNonAdminEnabled || access.isAdmin);
 
   return reply.send({
     eventId: params.id,
@@ -1992,18 +2293,47 @@ app.get("/events/:id/media", async (request, reply) => {
       likedByMe: m.likes.some((l) => l.userId === currentUser.id),
       likes: undefined,
     })),
-    limits: {
-      maxFileBytes: mediaMaxFileBytes,
-      maxEventBytes: mediaMaxEventBytes,
-    },
-    summary: {
-      count: media.length,
-      returnedBytes: totalBytes,
+    mediaUpload: {
+      enabled: globalEnabled && (groupSettings?.mediaUploadEnabled ?? false),
+      canUpload,
+      usedBytes: groupUsedBytes,
+      limitBytes: groupLimitBytes,
     },
   });
 });
 
+// ---------------------------------------------------------------------------
+// DELETE /media/:assetId — delete own upload (or admin of the group)
+// ---------------------------------------------------------------------------
+
+app.delete("/media/:assetId", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const { assetId } = request.params as { assetId: string };
+
+  const asset = await prisma.mediaAsset.findUnique({
+    where: { id: assetId },
+    include: { event: { select: { groupId: true } } },
+  });
+  if (!asset) return reply.status(404).send({ error: "Not found", code: "NOT_FOUND" });
+
+  const membership = await prisma.membership.findUnique({
+    where: { userId_groupId: { userId: currentUser.id, groupId: asset.event.groupId } },
+  });
+  const isAdmin = ["owner", "admin"].includes(membership?.role ?? "");
+
+  if (asset.uploaderId !== currentUser.id && !isAdmin) {
+    return reply.status(403).send({ error: "Not authorized to delete this asset", code: "FORBIDDEN" });
+  }
+
+  deleteUploadedFile(asset.url);
+  await prisma.mediaAsset.delete({ where: { id: assetId } });
+  return reply.send({ success: true });
+});
+
+// ---------------------------------------------------------------------------
 // POST /media/:assetId/like — toggle like on a media asset
+// ---------------------------------------------------------------------------
+
 app.post("/media/:assetId/like", { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (request, reply) => {
   const currentUser = await requireAuth(request, reply, prisma);
   const { assetId } = request.params as { assetId: string };
@@ -2016,7 +2346,6 @@ app.post("/media/:assetId/like", { config: { rateLimit: { max: 60, timeWindow: "
     return reply.status(404).send({ error: "Media asset not found", code: "NOT_FOUND" });
   }
 
-  // Ensure caller can access the event
   await canAccessEvent(prisma, asset.eventId, currentUser.id);
 
   const existing = await prisma.mediaAssetLike.findUnique({
@@ -2030,6 +2359,150 @@ app.post("/media/:assetId/like", { config: { rateLimit: { max: 60, timeWindow: "
     await prisma.mediaAssetLike.create({ data: { assetId, userId: currentUser.id } });
     return reply.send({ liked: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// GET /groups/:groupId/media — list ALL media in a group (admin subpage)
+// ---------------------------------------------------------------------------
+
+app.get("/groups/:groupId/media", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const { groupId } = request.params as { groupId: string };
+
+  const membership = await requireGroupMembership(prisma, currentUser.id, groupId);
+  requireRole(membership.role, ["owner", "admin"]);
+
+  const query = await validateRequest(mediaListQuerySchema, request.query);
+
+  const [media, groupSettings] = await Promise.all([
+    prisma.mediaAsset.findMany({
+      where: { event: { groupId } },
+      include: {
+        uploader: { select: { id: true, name: true, avatarUrl: true } },
+        event: { select: { id: true, title: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: query.limit,
+    }),
+    getGroupMediaSettings(groupId),
+  ]);
+
+  const usedBytes = media.reduce((sum, m) => sum + m.sizeBytes, 0);
+  const limitBytes = Number(groupSettings?.mediaStorageLimitBytes ?? MEDIA_GROUP_DEFAULT_LIMIT_BYTES);
+
+  return reply.send({
+    media,
+    settings: {
+      enabled: groupSettings?.mediaUploadEnabled ?? false,
+      nonAdminEnabled: groupSettings?.mediaUploadNonAdminEnabled ?? true,
+      storageLimitBytes: limitBytes,
+      usedBytes,
+    },
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /groups/:groupId/photos — all group photos, visible to all members.
+// Sorted newest-first. Used by the Media tab on GroupPage.
+// ---------------------------------------------------------------------------
+
+app.get("/groups/:groupId/photos", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const { groupId } = request.params as { groupId: string };
+
+  await requireGroupMembership(prisma, currentUser.id, groupId);
+
+  const query = await validateRequest(mediaListQuerySchema, request.query);
+
+  const media = await prisma.mediaAsset.findMany({
+    where: { event: { groupId } },
+    include: {
+      uploader: { select: { id: true, name: true, avatarUrl: true } },
+      event: { select: { id: true, title: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: query.limit,
+  });
+
+  return reply.send({ media });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /groups/:groupId/media/:assetId — admin deletes any group media
+// ---------------------------------------------------------------------------
+
+app.delete("/groups/:groupId/media/:assetId", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const { groupId, assetId } = request.params as { groupId: string; assetId: string };
+
+  const membership = await requireGroupMembership(prisma, currentUser.id, groupId);
+  requireRole(membership.role, ["owner", "admin"]);
+
+  const asset = await prisma.mediaAsset.findUnique({
+    where: { id: assetId },
+    include: { event: { select: { groupId: true } } },
+  });
+  if (!asset) return reply.status(404).send({ error: "Not found", code: "NOT_FOUND" });
+  if (asset.event.groupId !== groupId) {
+    return reply.status(403).send({ error: "Asset does not belong to this group", code: "FORBIDDEN" });
+  }
+
+  deleteUploadedFile(asset.url);
+  await prisma.mediaAsset.delete({ where: { id: assetId } });
+  return reply.send({ success: true });
+});
+
+// ---------------------------------------------------------------------------
+// PATCH /groups/:groupId/media-settings — admin updates group media settings
+// ---------------------------------------------------------------------------
+
+const groupMediaSettingsBodySchema = z.object({
+  mediaUploadEnabled: z.boolean().optional(),
+  mediaStorageLimitBytes: z.number().int().min(1024 * 1024).max(MEDIA_GROUP_MAX_LIMIT_BYTES).optional(),
+  mediaUploadNonAdminEnabled: z.boolean().optional(),
+  unlockCode: z.string().optional(),
+});
+
+app.patch("/groups/:groupId/media-settings", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const { groupId } = request.params as { groupId: string };
+  const body = await validateRequest(groupMediaSettingsBodySchema, request.body);
+
+  const membership = await requireGroupMembership(prisma, currentUser.id, groupId);
+  requireRole(membership.role, ["owner", "admin"]);
+
+  const currentSettings = await getGroupMediaSettings(groupId);
+
+  // Enabling media uploads requires the global unlock code if one is set
+  if (body.mediaUploadEnabled === true && !currentSettings?.mediaUploadEnabled) {
+    const requiredCode = await redis.get("admin:media_upload_code");
+    if (requiredCode) {
+      if (!body.unlockCode || body.unlockCode.trim().toUpperCase() !== requiredCode.toUpperCase()) {
+        return reply.status(403).send({ error: "Invalid media upload unlock code.", code: "INVALID_MEDIA_CODE" });
+      }
+    }
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (body.mediaUploadEnabled !== undefined) updates.mediaUploadEnabled = body.mediaUploadEnabled;
+  if (body.mediaStorageLimitBytes !== undefined) updates.mediaStorageLimitBytes = body.mediaStorageLimitBytes;
+  if (body.mediaUploadNonAdminEnabled !== undefined) updates.mediaUploadNonAdminEnabled = body.mediaUploadNonAdminEnabled;
+
+  const updated = await prisma.group.update({
+    where: { id: groupId },
+    data: updates,
+    select: {
+      mediaUploadEnabled: true,
+      mediaStorageLimitBytes: true,
+      mediaUploadNonAdminEnabled: true,
+    },
+  });
+
+  return reply.send({
+    mediaUploadEnabled: updated.mediaUploadEnabled,
+    mediaStorageLimitBytes: Number(updated.mediaStorageLimitBytes),
+    mediaUploadNonAdminEnabled: updated.mediaUploadNonAdminEnabled,
+  });
 });
 
 app.get("/events/:id", async (request, reply) => {
@@ -2062,7 +2535,7 @@ app.get("/events/:id", async (request, reply) => {
   const isCreator = event.createdById === currentUser.id;
   const isInvited = event.invites.some((invite) => invite.userId === currentUser.id);
 
-  if (!isAdmin && !isCreator && event.invites.length > 0 && !isInvited) {
+  if (!isAdmin && !isCreator && event.isPrivate && !isInvited) {
     return reply.status(403).send({ error: "Access denied" });
   }
 
@@ -2071,7 +2544,22 @@ app.get("/events/:id", async (request, reply) => {
     : null;
   const myRating = event.ratings.find((r) => r.userId === currentUser.id)?.value ?? null;
 
-  return reply.send({ event: { ...event, avgRating, myRating, ratingCount: event.ratings.length }, isAdmin, isCreator });
+  // Attach media upload capability info so the frontend can show/hide the upload button
+  const [groupSettings, globalEnabled, groupUsedBytes] = await Promise.all([
+    getGroupMediaSettings(event.groupId),
+    isMediaUploadGloballyEnabled(),
+    getGroupMediaUsedBytes(event.groupId),
+  ]);
+  const groupLimitBytes = Number(groupSettings?.mediaStorageLimitBytes ?? MEDIA_GROUP_DEFAULT_LIMIT_BYTES);
+  const mediaUpload = {
+    enabled: globalEnabled && (groupSettings?.mediaUploadEnabled ?? false),
+    canUpload: globalEnabled && (groupSettings?.mediaUploadEnabled ?? false) &&
+      (groupSettings?.mediaUploadNonAdminEnabled || isAdmin),
+    usedBytes: groupUsedBytes,
+    limitBytes: groupLimitBytes,
+  };
+
+  return reply.send({ event: { ...event, avgRating, myRating, ratingCount: event.ratings.length }, isAdmin, isCreator, mediaUpload });
 });
 
 app.get("/events", async (request, reply) => {
@@ -2106,7 +2594,7 @@ app.get("/events", async (request, reply) => {
     if (isAdmin || event.createdById === currentUser.id) {
       return true;
     }
-    if (event.invites.length === 0) {
+    if (!event.isPrivate) {
       return true;
     }
     return event.invites.some((invite) => invite.userId === currentUser.id);
@@ -2152,18 +2640,21 @@ app.post("/events", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } }
     },
   });
 
-  await notificationQueue.add("fanout", {
-    type: "event_created",
-    groupId: body.groupId,
-    actorUserId: currentUser.id,
-    eventId: event.id,
-    tagIds: event.tags.map((tag) => tag.id),
-    title: `New event: ${event.title}`,
-    body: `${currentUser.name} created an event in your group.`,
-    url: `/events/${event.id}`,
-  });
+  if (!event.isPrivate) {
+    await notificationQueue.add("fanout", {
+      type: "event_created",
+      groupId: body.groupId,
+      actorUserId: currentUser.id,
+      eventId: event.id,
+      tagIds: event.tags.map((tag) => tag.id),
+      title: `New event: ${event.title}`,
+      body: `${currentUser.name} created an event in your group.`,
+      url: `/events/${event.id}`,
+    });
+  }
 
   await queueCalendarSync(body.groupId, "event_created", event.id);
+  await scheduleEventStartNotification(event);
 
   return reply.status(201).send({ event });
 });
@@ -2201,21 +2692,33 @@ app.patch("/events/:id", async (request, reply) => {
     include: {
       tags: true,
       rsvps: true,
+      invites: true,
     },
   });
 
-  await notificationQueue.add("fanout", {
-    type: "event_changed",
+  const changedFanoutBase = {
+    type: "event_changed" as const,
     groupId: access.event.groupId,
     actorUserId: currentUser.id,
     eventId: event.id,
-    tagIds: event.tags.map((tag) => tag.id),
     title: `Event updated: ${event.title}`,
     body: `${currentUser.name} updated event details.`,
     url: `/events/${event.id}`,
-  });
+  };
+
+  if (event.isPrivate) {
+    const inviteeIds = event.invites.map((inv) => inv.userId);
+    if (inviteeIds.length > 0) {
+      await notificationQueue.add("fanout", { ...changedFanoutBase, recipientUserIds: inviteeIds });
+    }
+  } else {
+    await notificationQueue.add("fanout", changedFanoutBase);
+  }
 
   await queueCalendarSync(access.event.groupId, "event_updated", event.id);
+  if (body.dateTime) {
+    await scheduleEventStartNotification({ id: event.id, groupId: access.event.groupId, title: event.title, dateTime: event.dateTime });
+  }
 
   return reply.send({ event });
 });
@@ -2233,15 +2736,27 @@ app.delete("/events/:id", async (request, reply) => {
   }
 
   await prisma.event.delete({ where: { id: params.id } });
+  await cancelEventStartNotification(params.id);
   await queueCalendarSync(access.event.groupId, "event_deleted", params.id);
   return reply.status(204).send();
 });
 
-app.post("/events/:id/rsvps", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
+app.post("/events/:id/rsvps", async (request, reply) => {
   const currentUser = await requireAuth(request, reply, prisma);
   const params = await validateRequest(updateEventParamsSchema, request.params);
   const body = await validateRequest(rsvpBodySchema, request.body);
   const access = await canAccessEvent(prisma, params.id, currentUser.id);
+
+  // Per-user-per-group rate limit: 3 RSVPs per minute
+  const rsvpRateKey = `rsvp_rate:${currentUser.id}:${access.event.groupId}`;
+  const rsvpCount = await redis.incr(rsvpRateKey);
+  if (rsvpCount === 1) await redis.expire(rsvpRateKey, 60);
+  if (rsvpCount > 3) {
+    return reply.status(429).send({
+      error: "You're changing your RSVP too quickly. Wait a moment and try again.",
+      code: "RSVP_RATE_LIMITED",
+    });
+  }
 
   const where = {
     eventId_userId: {
@@ -2264,15 +2779,14 @@ app.post("/events/:id/rsvps", { config: { rateLimit: { max: 30, timeWindow: "1 m
       },
     });
 
-    if (access.event.createdById !== currentUser.id) {
+    if (body.status === "yes") {
       await notificationQueue.add("fanout", {
         type: "rsvp_update",
         groupId: access.event.groupId,
         actorUserId: currentUser.id,
         eventId: params.id,
-        recipientUserIds: [access.event.createdById],
         title: `RSVP on ${access.event.title}`,
-        body: `${currentUser.name} responded ${body.status} to your event.`,
+        body: `${currentUser.name} is going.`,
         url: `/events/${params.id}`,
       });
     }
@@ -2306,15 +2820,14 @@ app.post("/events/:id/rsvps", { config: { rateLimit: { max: 30, timeWindow: "1 m
     }
 
     const updated = await prisma.rSVP.findUnique({ where });
-    if (access.event.createdById !== currentUser.id) {
+    if (body.status === "yes") {
       await notificationQueue.add("fanout", {
         type: "rsvp_update",
         groupId: access.event.groupId,
         actorUserId: currentUser.id,
         eventId: params.id,
-        recipientUserIds: [access.event.createdById],
         title: `RSVP updated on ${access.event.title}`,
-        body: `${currentUser.name} changed their RSVP to ${body.status}.`,
+        body: `${currentUser.name} is going.`,
         url: `/events/${params.id}`,
       });
     }
@@ -2328,15 +2841,14 @@ app.post("/events/:id/rsvps", { config: { rateLimit: { max: 30, timeWindow: "1 m
     },
   });
 
-  if (access.event.createdById !== currentUser.id) {
+  if (body.status === "yes") {
     await notificationQueue.add("fanout", {
       type: "rsvp_update",
       groupId: access.event.groupId,
       actorUserId: currentUser.id,
       eventId: params.id,
-      recipientUserIds: [access.event.createdById],
       title: `RSVP updated on ${access.event.title}`,
-      body: `${currentUser.name} changed their RSVP to ${body.status}.`,
+      body: `${currentUser.name} is going.`,
       url: `/events/${params.id}`,
     });
   }
@@ -2369,6 +2881,29 @@ app.patch("/events/:id/rsvps/:userId", async (request, reply) => {
     return reply.status(404).send({ error: "RSVP not found", code: "NOT_FOUND" });
   }
 
+  let rsvpUserName: string;
+  if (params.userId === currentUser.id) {
+    rsvpUserName = currentUser.name;
+  } else {
+    const rsvpUser = await prisma.user.findUnique({
+      where: { id: params.userId },
+      select: { name: true },
+    });
+    rsvpUserName = rsvpUser?.name ?? "Someone";
+  }
+
+  const queueRsvpNotification = async () => {
+    await notificationQueue.add("fanout", {
+      type: "rsvp_update",
+      groupId: access.event.groupId,
+      actorUserId: currentUser.id,
+      eventId: params.id,
+      title: `RSVP updated on ${access.event.title}`,
+      body: `${rsvpUserName} changed their RSVP to ${body.status}.`,
+      url: `/events/${params.id}`,
+    });
+  };
+
   if (body.expectedUpdatedAt) {
     const conditionalUpdate = await prisma.rSVP.updateMany({
       where: {
@@ -2395,6 +2930,7 @@ app.patch("/events/:id/rsvps/:userId", async (request, reply) => {
     }
 
     const updated = await prisma.rSVP.findUnique({ where });
+    await queueRsvpNotification();
     return reply.send({ rsvp: updated });
   }
 
@@ -2405,6 +2941,7 @@ app.patch("/events/:id/rsvps/:userId", async (request, reply) => {
     },
   });
 
+  await queueRsvpNotification();
   return reply.send({ rsvp });
 });
 
@@ -2507,22 +3044,48 @@ app.get("/events/:id/invites", async (request, reply) => {
   const params = await validateRequest(updateEventParamsSchema, request.params);
   const access = await canAccessEvent(prisma, params.id, currentUser.id);
 
-  requireRole(access.membership.role, ["owner", "admin"]);
+  if (!access.isAdmin && !access.isCreator && !access.hasInvite) {
+    return reply.status(403).send({ error: "Forbidden", code: "FORBIDDEN" });
+  }
 
   const invites = await prisma.eventInvite.findMany({
     where: { eventId: params.id },
     include: {
       invitedUser: {
-        select: { id: true, email: true, name: true },
+        select: { id: true, name: true, avatarUrl: true },
       },
       invitedBy: {
-        select: { id: true, email: true, name: true },
+        select: { id: true, name: true },
       },
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: { createdAt: "asc" },
   });
 
   return reply.send({ invites });
+});
+
+app.delete("/events/:id/invites/:userId", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const params = await validateRequest(
+    z.object({ id: schemas.id, userId: schemas.id }),
+    request.params
+  );
+
+  const access = await canAccessEvent(prisma, params.id, currentUser.id);
+  if (!access.isAdmin && !access.isCreator) {
+    return reply.status(403).send({
+      error: "Only event creator or admin can remove invites",
+      code: "FORBIDDEN",
+    });
+  }
+
+  await prisma.eventInvite.deleteMany({
+    where: { eventId: params.id, userId: params.userId },
+  });
+
+  await queueCalendarSync(access.event.groupId, "event_invite_changed", params.id);
+
+  return reply.status(204).send();
 });
 
 // ============================================================================
@@ -2814,6 +3377,145 @@ app.get("/calendar/group-feed/:token.ics", async (request, reply) => {
   return reply.send(ics);
 });
 
+// ============================================================================
+// Per-user calendar preference routes
+// ============================================================================
+
+const calendarPrefsBodySchema = z.object({
+  filterMode: z.enum(["all", "rsvp", "tags"]),
+  tagIds: z.array(schemas.id).optional(),
+});
+
+function buildUserCalendarFeedUrl(token: string) {
+  const apiBase = (process.env.API_BASE_URL || "").replace(/\/$/, "");
+  return `${apiBase}/calendar/user-feed/${token}.ics`;
+}
+
+async function getOrCreateCalendarPref(userId: string, groupId: string) {
+  const existing = await prisma.userCalendarPreference.findUnique({
+    where: { userId_groupId: { userId, groupId } },
+  });
+  if (existing) return existing;
+  const token = randomBytes(32).toString("hex");
+  return prisma.userCalendarPreference.create({
+    data: { userId, groupId, calendarToken: token },
+  });
+}
+
+// GET /groups/:groupId/calendar/preferences — return (or auto-create) user's prefs + feed URL
+app.get("/groups/:groupId/calendar/preferences", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const params = await validateRequest(groupIdParamsSchema, request.params);
+  await requireGroupMembership(prisma, currentUser.id, params.groupId);
+
+  const pref = await getOrCreateCalendarPref(currentUser.id, params.groupId);
+  return reply.send({
+    filterMode: pref.filterMode,
+    tagIds: pref.tagIds ? pref.tagIds.split(",").filter(Boolean) : [],
+    feedUrl: buildUserCalendarFeedUrl(pref.calendarToken),
+  });
+});
+
+// PUT /groups/:groupId/calendar/preferences — upsert user's filter settings
+app.put("/groups/:groupId/calendar/preferences", { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const params = await validateRequest(groupIdParamsSchema, request.params);
+  const body = await validateRequest(calendarPrefsBodySchema, request.body);
+  await requireGroupMembership(prisma, currentUser.id, params.groupId);
+
+  const tagIdsStr = body.filterMode === "tags" && Array.isArray(body.tagIds)
+    ? body.tagIds.join(",")
+    : "";
+
+  const pref = await prisma.userCalendarPreference.upsert({
+    where: { userId_groupId: { userId: currentUser.id, groupId: params.groupId } },
+    update: { filterMode: body.filterMode, tagIds: tagIdsStr, updatedAt: new Date() },
+    create: {
+      userId: currentUser.id,
+      groupId: params.groupId,
+      filterMode: body.filterMode,
+      tagIds: tagIdsStr,
+      calendarToken: randomBytes(32).toString("hex"),
+    },
+  });
+
+  return reply.send({
+    filterMode: pref.filterMode,
+    tagIds: pref.tagIds ? pref.tagIds.split(",").filter(Boolean) : [],
+    feedUrl: buildUserCalendarFeedUrl(pref.calendarToken),
+  });
+});
+
+// GET /calendar/user-feed/:token.ics — public per-user ICS feed (token = auth)
+const userFeedParamsSchema = z.object({ token: z.string().min(64).max(64) });
+
+app.get("/calendar/user-feed/:token.ics", async (request, reply) => {
+  const params = await validateRequest(userFeedParamsSchema, request.params);
+
+  const pref = await prisma.userCalendarPreference.findUnique({
+    where: { calendarToken: params.token },
+    select: { userId: true, groupId: true, filterMode: true, tagIds: true },
+  });
+  if (!pref) return reply.status(404).send("Not found");
+
+  const membership = await prisma.membership.findUnique({
+    where: { userId_groupId: { userId: pref.userId, groupId: pref.groupId } },
+    select: { status: true },
+  });
+  if (!membership || membership.status !== "active") return reply.status(403).send("Forbidden");
+
+  const group = await prisma.group.findUnique({
+    where: { id: pref.groupId },
+    select: { name: true },
+  });
+  if (!group) return reply.status(404).send("Not found");
+
+  let whereClause: object = { groupId: pref.groupId, isPrivate: false };
+
+  if (pref.filterMode === "rsvp") {
+    const rsvps = await prisma.rSVP.findMany({
+      where: { userId: pref.userId, status: { in: ["yes", "maybe"] }, event: { groupId: pref.groupId } },
+      select: { eventId: true },
+    });
+    const rsvpEventIds = rsvps.map((r) => r.eventId);
+    // Include private events the user RSVPed to (they were invited, so it's their own calendar)
+    whereClause = { id: { in: rsvpEventIds }, groupId: pref.groupId };
+  } else if (pref.filterMode === "tags") {
+    const tagIdList = pref.tagIds.split(",").filter(Boolean);
+    // When no tags are selected, show empty feed rather than falling through to all events.
+    whereClause = tagIdList.length > 0
+      ? { groupId: pref.groupId, isPrivate: false, tags: { some: { id: { in: tagIdList } } } }
+      : { id: { in: [] } }; // no tags selected → empty calendar
+  }
+
+  const events = await prisma.event.findMany({
+    where: whereClause,
+    orderBy: { dateTime: "asc" },
+    select: {
+      id: true, title: true, details: true,
+      dateTime: true, endsAt: true, location: true, updatedAt: true,
+    },
+  });
+
+  const ics = buildIcsCalendar(events, {
+    calendarName: `GEM - ${group.name}`,
+    webBaseUrl: process.env.WEB_BASE_URL,
+  });
+
+  const syncMeta = await getCalendarSyncMeta(pref.groupId);
+  const latestUpdatedAt = events.reduce<Date | null>((latest, ev) => {
+    if (!latest || ev.updatedAt > latest) return ev.updatedAt;
+    return latest;
+  }, null);
+
+  reply.header("Content-Type", "text/calendar; charset=utf-8");
+  reply.header("Cache-Control", "no-cache, max-age=0, must-revalidate");
+  reply.header("Content-Disposition", `inline; filename="gem-user-${pref.groupId}.ics"`);
+  if (syncMeta.revision) reply.header("ETag", `W/\"${syncMeta.revision}\"`);
+  if (latestUpdatedAt) reply.header("Last-Modified", formatHttpDate(latestUpdatedAt));
+  return reply.send(ics);
+});
+
 app.post("/calendar/sync/webhook", async (request, reply) => {
   const providedSecret = request.headers["x-calendar-webhook-secret"];
 
@@ -2833,76 +3535,6 @@ app.post("/calendar/sync/webhook", async (request, reply) => {
     eventId: body.eventId ?? null,
     reason: body.reason,
   });
-});
-
-// ============================================================================
-// Chat Routes (Phase 4)
-// ============================================================================
-
-app.get("/events/:id/messages", async (request, reply) => {
-  const currentUser = await requireAuth(request, reply, prisma);
-  const params = await validateRequest(updateEventParamsSchema, request.params);
-  const query = await validateRequest(messageListQuerySchema, request.query);
-
-  await canAccessEvent(prisma, params.id, currentUser.id);
-
-  // Resolve before-cursor to a createdAt timestamp
-  let cursorFilter: object | undefined;
-  if (query.before) {
-    const ref = await prisma.message.findUnique({
-      where: { id: query.before },
-      select: { createdAt: true },
-    });
-    if (ref) {
-      cursorFilter = { createdAt: { lt: ref.createdAt } };
-    }
-  }
-
-  const raw = await prisma.message.findMany({
-    where: {
-      eventId: params.id,
-      ...cursorFilter,
-    },
-    orderBy: { createdAt: "desc" },
-    take: query.limit + 1,
-    include: {
-      user: { select: { id: true, name: true, email: true } },
-      reactions: { select: { userId: true, emoji: true } },
-    },
-  });
-
-  const hasMore = raw.length > query.limit;
-  const messages = raw.slice(0, query.limit).reverse(); // oldest-first for display
-
-  return reply.send({ messages, hasMore });
-});
-
-app.patch("/events/:id/messages/:messageId/pin", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
-  const currentUser = await requireAuth(request, reply, prisma);
-  const params = await validateRequest(messageParamsSchema, request.params);
-
-  const access = await canAccessEvent(prisma, params.id, currentUser.id);
-  if (!access.isAdmin && !access.isCreator) {
-    return reply.status(403).send({
-      error: "Only event creator or admin can pin messages",
-      code: "FORBIDDEN",
-    });
-  }
-
-  const existing = await prisma.message.findFirst({
-    where: { id: params.messageId, eventId: params.id },
-  });
-  if (!existing) {
-    return reply.status(404).send({ error: "Message not found", code: "NOT_FOUND" });
-  }
-
-  const message = await prisma.message.update({
-    where: { id: params.messageId },
-    data: { pinned: !existing.pinned },
-    include: { user: { select: { id: true, name: true, email: true } } },
-  });
-
-  return reply.send({ message });
 });
 
 // ============================================================================
@@ -3030,6 +3662,14 @@ app.patch("/groups/:groupId", async (request, reply) => {
       name: body.name,
       description: body.description,
       avatarUrl: body.avatarUrl,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      groupId: params.groupId,
+      actorId: currentUser.id,
+      action: "group_updated",
     },
   });
 
@@ -3252,6 +3892,14 @@ app.post("/groups/:groupId/invite-code/regenerate", { config: { rateLimit: { max
   if (!inviteCode) {
     throw new Error(`Group ${params.groupId} is missing an invite code after regeneration`);
   }
+
+  await prisma.auditLog.create({
+    data: {
+      groupId: params.groupId,
+      actorId: currentUser.id,
+      action: "invite_regenerated",
+    },
+  });
 
   return reply.send({
     groupId: params.groupId,
@@ -3495,6 +4143,15 @@ app.post("/groups/:groupId/members/:userId/mute", { config: { rateLimit: { max: 
     data: { mutedUntil },
   });
 
+  await prisma.auditLog.create({
+    data: {
+      groupId,
+      actorId: currentUser.id,
+      action: "member_muted",
+      targetUserId: userId,
+    },
+  });
+
   return reply.send({ message: "Member muted", mutedUntil });
 });
 
@@ -3509,6 +4166,15 @@ app.post("/groups/:groupId/members/:userId/unmute", { config: { rateLimit: { max
   await prisma.membership.updateMany({
     where: { userId, groupId },
     data: { mutedUntil: null },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      groupId,
+      actorId: currentUser.id,
+      action: "member_unmuted",
+      targetUserId: userId,
+    },
   });
 
   return reply.send({ message: "Member unmuted" });
@@ -3771,10 +4437,17 @@ async function requireAdminEmail(request: FastifyRequest, reply: FastifyReply, p
 const updateDevConfigBodySchema = z.object({
   registrationInviteCode: z.string().min(1).max(64).optional(),
   groupCreationInviteCode: z.string().min(1).max(64).optional(),
+  mediaUploadEnabled: z.boolean().optional(),
+  mediaUploadCode: z.string().max(64).optional(),
 });
 
 const createDevGroupCodeBodySchema = z.object({
   count: z.number().int().min(1).max(20).optional(),
+});
+
+const createInviteLinkBodySchema = z.object({
+  expiresAt: z.string().datetime().optional(),
+  singleUse: z.boolean().default(false),
 });
 
 // GET /admin/dev/config — fetch current developer configuration
@@ -3804,6 +4477,20 @@ app.get("/admin/dev/config", async (request, reply) => {
     take: 50,
   });
 
+  // Active invite links (not yet single-use-consumed; may be expired by time)
+  const inviteLinks = await prisma.betaCode.findMany({
+    where: { type: "invite_link", OR: [{ singleUse: false }, { usedAt: null }] },
+    select: { id: true, code: true, expiresAt: true, singleUse: true, usedAt: true, createdAt: true },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+
+  const mediaUploadEnabled = (await redis.get("admin:media_upload_enabled")) === "true";
+  const mediaUploadCode = (await redis.get("admin:media_upload_code")) ?? "";
+
+  // Global media storage stats
+  const globalMediaUsed = await getGlobalMediaUsedBytes();
+
   return reply.send({
     registrationInviteCode,
     groupCreationInviteCode,
@@ -3811,6 +4498,15 @@ app.get("/admin/dev/config", async (request, reply) => {
     groupCreationBetaRequired: process.env.GROUP_CREATION_BETA_REQUIRED === "true",
     groupCodes,
     registrationCodes,
+    inviteLinks,
+    mediaUploadEnabled,
+    mediaUploadCode,
+    mediaStorage: {
+      usedBytes: globalMediaUsed,
+      maxBytes: MEDIA_GLOBAL_MAX_BYTES,
+      usedFormatted: formatBytes(globalMediaUsed),
+      maxFormatted: formatBytes(MEDIA_GLOBAL_MAX_BYTES),
+    },
   });
 });
 
@@ -3835,13 +4531,30 @@ app.patch("/admin/dev/config", async (request, reply) => {
     await redis.set("admin:group_creation_invite_code", code);
   }
 
+  if (body.mediaUploadEnabled !== undefined) {
+    await redis.set("admin:media_upload_enabled", body.mediaUploadEnabled ? "true" : "false");
+  }
+
+  if (body.mediaUploadCode !== undefined) {
+    const code = body.mediaUploadCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 64);
+    if (code.length === 0) {
+      await redis.del("admin:media_upload_code");
+    } else if (code.length < 4) {
+      return reply.status(400).send({ error: "Media upload code must be at least 4 characters", code: "INVALID_CODE" });
+    } else {
+      await redis.set("admin:media_upload_code", code);
+    }
+  }
+
   // Return updated config
   const registrationInviteCode = await redis.get("admin:registration_invite_code")
     ?? process.env.REGISTRATION_INVITE_CODE ?? "";
   const groupCreationInviteCode = await redis.get("admin:group_creation_invite_code")
     ?? process.env.GROUP_CREATION_INVITE_CODE ?? "";
+  const mediaUploadEnabled = (await redis.get("admin:media_upload_enabled")) === "true";
+  const mediaUploadCode = (await redis.get("admin:media_upload_code")) ?? "";
 
-  return reply.send({ registrationInviteCode, groupCreationInviteCode });
+  return reply.send({ registrationInviteCode, groupCreationInviteCode, mediaUploadEnabled, mediaUploadCode });
 });
 
 // POST /admin/dev/group-codes — generate new group creation codes
@@ -3892,6 +4605,35 @@ app.post("/admin/dev/registration-codes", async (request, reply) => {
 
 // DELETE /admin/dev/registration-codes/:id — delete (revoke) a one-time registration code
 app.delete("/admin/dev/registration-codes/:id", async (request, reply) => {
+  await requireAdminEmail(request, reply, prisma);
+  const params = await validateRequest(z.object({ id: schemas.id }), request.params);
+
+  await prisma.betaCode.delete({ where: { id: params.id } });
+
+  return reply.send({ success: true });
+});
+
+// POST /admin/dev/invite-links — create a new invite link
+app.post("/admin/dev/invite-links", async (request, reply) => {
+  await requireAdminEmail(request, reply, prisma);
+  const body = await validateRequest(createInviteLinkBodySchema, request.body);
+
+  const token = randomBytes(16).toString("hex");
+  const link = await prisma.betaCode.create({
+    data: {
+      code: token,
+      type: "invite_link",
+      expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
+      singleUse: body.singleUse,
+    },
+    select: { id: true, code: true, expiresAt: true, singleUse: true, usedAt: true, createdAt: true },
+  });
+
+  return reply.status(201).send({ link });
+});
+
+// DELETE /admin/dev/invite-links/:id — revoke an invite link
+app.delete("/admin/dev/invite-links/:id", async (request, reply) => {
   await requireAdminEmail(request, reply, prisma);
   const params = await validateRequest(z.object({ id: schemas.id }), request.params);
 
@@ -4004,6 +4746,15 @@ app.post("/groups/:groupId/tags", async (request, reply) => {
     },
   });
 
+  await prisma.auditLog.create({
+    data: {
+      groupId: params.groupId,
+      actorId: currentUser.id,
+      action: "tag_created",
+      meta: { tagName: body.name },
+    },
+  });
+
   return reply.status(201).send({ tag });
 });
 
@@ -4049,6 +4800,15 @@ app.delete("/groups/:groupId/tags/:tagId", async (request, reply) => {
     return reply.status(404).send({ error: "Tag not found", code: "NOT_FOUND" });
   }
 
+  await prisma.auditLog.create({
+    data: {
+      groupId: params.groupId,
+      actorId: currentUser.id,
+      action: "tag_deleted",
+      meta: { tagName: tag.name },
+    },
+  });
+
   await prisma.tag.delete({ where: { id: params.tagId } });
   return reply.status(204).send();
 });
@@ -4071,18 +4831,46 @@ app.get("/groups/:groupId/channels", async (request, reply) => {
         where: { userId: currentUser.id },
         select: { id: true },
       },
+      tags: { select: { id: true, name: true, color: true } },
     },
     orderBy: { name: "asc" },
   });
 
+  // Fetch read states and compute unread counts in parallel
+  const readStates = await prisma.channelReadState.findMany({
+    where: { userId: currentUser.id, channelId: { in: channels.map((c) => c.id) } },
+    select: { channelId: true, lastReadAt: true },
+  });
+  const readMap = new Map(readStates.map((r) => [r.channelId, r.lastReadAt]));
+
+  const unreadCounts = await Promise.all(
+    channels.map((ch) =>
+      prisma.message.count({
+        where: {
+          channelId: ch.id,
+          createdAt: { gt: readMap.get(ch.id) ?? new Date(0) },
+        },
+      })
+    )
+  );
+
+  // general channel always first, rest alphabetical
+  const sorted = [
+    ...channels.map((ch, i) => ({ ch, unread: unreadCounts[i] })).filter(({ ch }) => ch.isGeneral),
+    ...channels.map((ch, i) => ({ ch, unread: unreadCounts[i] })).filter(({ ch }) => !ch.isGeneral),
+  ];
+
   return reply.send({
-    channels: channels.map((ch) => ({
+    channels: sorted.map(({ ch, unread }) => ({
       id: ch.id,
       name: ch.name,
+      isGeneral: ch.isGeneral,
       isInviteOnly: ch.isInviteOnly,
       subscriberCount: ch._count.subscriptions,
       messageCount: ch._count.messages,
       isSubscribed: ch.subscriptions.length > 0,
+      tags: ch.tags,
+      unreadCount: unread,
     })),
   });
 });
@@ -4101,6 +4889,11 @@ app.post("/groups/:groupId/channels", { config: { rateLimit: { max: 10, timeWind
       name: body.name,
       isInviteOnly: body.isInviteOnly ?? false,
     },
+  });
+
+  // Auto-subscribe the creator so they can immediately use the channel they just made
+  await prisma.channelSubscription.create({
+    data: { userId: currentUser.id, channelId: channel.id },
   });
 
   return reply.status(201).send({ channel });
@@ -4150,6 +4943,100 @@ app.delete("/groups/:groupId/channels/:channelId/subscribe", async (request, rep
   return reply.status(204).send();
 });
 
+// PUT /groups/:groupId/channels/:channelId/tags — set tag assignments for a channel (admin+)
+const channelTagsBodySchema = z.object({
+  tagIds: z.array(schemas.id),
+});
+
+app.put("/groups/:groupId/channels/:channelId/tags", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const params = await validateRequest(channelParamsSchema, request.params);
+  const body = await validateRequest(channelTagsBodySchema, request.body);
+
+  const membership = await requireGroupMembership(prisma, currentUser.id, params.groupId);
+  requireRole(membership.role, ["owner", "admin"]);
+
+  const channel = await prisma.channel.findFirst({
+    where: { id: params.channelId, groupId: params.groupId },
+  });
+  if (!channel) {
+    return reply.status(404).send({ error: "Channel not found", code: "NOT_FOUND" });
+  }
+
+  // Validate all tagIds belong to this group
+  if (body.tagIds.length > 0) {
+    const tags = await prisma.tag.findMany({
+      where: { id: { in: body.tagIds }, groupId: params.groupId },
+      select: { id: true },
+    });
+    if (tags.length !== body.tagIds.length) {
+      return reply.status(400).send({ error: "One or more tags not found in this group", code: "INVALID_TAGS" });
+    }
+  }
+
+  const updated = await prisma.channel.update({
+    where: { id: params.channelId },
+    data: {
+      tags: { set: body.tagIds.map((id) => ({ id })) },
+    },
+    include: { tags: { select: { id: true, name: true, color: true } } },
+  });
+
+  return reply.send({ tags: updated.tags });
+});
+
+// PATCH /groups/:groupId/channels/:channelId — rename a channel (admin+)
+const renameChannelBodySchema = z.object({
+  name: z.string().min(1).max(32).regex(/^[a-z0-9-]+$/, "Name must be lowercase letters, numbers, or hyphens"),
+});
+
+app.patch("/groups/:groupId/channels/:channelId", { config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const params = await validateRequest(channelParamsSchema, request.params);
+  const body = await validateRequest(renameChannelBodySchema, request.body);
+
+  const membership = await requireGroupMembership(prisma, currentUser.id, params.groupId);
+  requireRole(membership.role, ["owner", "admin"]);
+
+  const channel = await prisma.channel.findFirst({
+    where: { id: params.channelId, groupId: params.groupId },
+  });
+  if (!channel) {
+    return reply.status(404).send({ error: "Channel not found", code: "NOT_FOUND" });
+  }
+
+  const updated = await prisma.channel.update({
+    where: { id: params.channelId },
+    data: { name: body.name },
+    select: { id: true, name: true, isInviteOnly: true, isGeneral: true },
+  });
+
+  return reply.send({ channel: updated });
+});
+
+// DELETE /groups/:groupId/channels/:channelId — delete a channel (admin+, non-general only)
+app.delete("/groups/:groupId/channels/:channelId", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const params = await validateRequest(channelParamsSchema, request.params);
+
+  const membership = await requireGroupMembership(prisma, currentUser.id, params.groupId);
+  requireRole(membership.role, ["owner", "admin"]);
+
+  const channel = await prisma.channel.findFirst({
+    where: { id: params.channelId, groupId: params.groupId },
+  });
+  if (!channel) {
+    return reply.status(404).send({ error: "Channel not found", code: "NOT_FOUND" });
+  }
+  if (channel.isGeneral) {
+    return reply.status(400).send({ error: "Cannot delete the general channel", code: "CANNOT_DELETE_GENERAL" });
+  }
+
+  await prisma.channel.delete({ where: { id: params.channelId } });
+
+  return reply.status(204).send();
+});
+
 app.get("/groups/:groupId/channels/:channelId/messages", async (request, reply) => {
   const currentUser = await requireAuth(request, reply, prisma);
   const params = await validateRequest(channelParamsSchema, request.params);
@@ -4182,6 +5069,8 @@ app.get("/groups/:groupId/channels/:channelId/messages", async (request, reply) 
     take: query.limit + 1,
     include: {
       user: { select: { id: true, name: true, email: true, avatarUrl: true } },
+      reactions: { select: { userId: true, emoji: true } },
+      replyTo: { select: { id: true, content: true, user: { select: { id: true, name: true } } } },
     },
   });
 
@@ -4191,66 +5080,244 @@ app.get("/groups/:groupId/channels/:channelId/messages", async (request, reply) 
   return reply.send({ messages, hasMore });
 });
 
-// ============================================================================
-// Message Reactions Routes
-// ============================================================================
-
-app.post("/events/:id/messages/:messageId/reactions", { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (request, reply) => {
+// POST /groups/:groupId/channels/:channelId/read — mark channel as read for the current user
+app.post("/groups/:groupId/channels/:channelId/read", { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (request, reply) => {
   const currentUser = await requireAuth(request, reply, prisma);
-  const params = await validateRequest(reactionAddParamsSchema, request.params);
-  const body = await validateRequest(reactionBodySchema, request.body);
+  const params = await validateRequest(channelParamsSchema, request.params);
 
-  await canAccessEvent(prisma, params.id, currentUser.id);
+  await requireGroupMembership(prisma, currentUser.id, params.groupId);
 
-  const message = await prisma.message.findFirst({
-    where: { id: params.messageId, eventId: params.id },
+  await prisma.channelReadState.upsert({
+    where: { userId_channelId: { userId: currentUser.id, channelId: params.channelId } },
+    create: { userId: currentUser.id, channelId: params.channelId, lastReadAt: new Date() },
+    update: { lastReadAt: new Date() },
   });
 
+  return reply.status(204).send();
+});
+
+// DELETE /groups/:groupId/channels/:channelId/messages/:messageId — delete own message only
+const messageParamsSchema = z.object({
+  groupId: schemas.id,
+  channelId: schemas.id,
+  messageId: schemas.id,
+});
+
+app.delete("/groups/:groupId/channels/:channelId/messages/:messageId", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const params = await validateRequest(messageParamsSchema, request.params);
+
+  await requireGroupMembership(prisma, currentUser.id, params.groupId);
+
+  const message = await prisma.message.findFirst({
+    where: { id: params.messageId, channelId: params.channelId },
+  });
   if (!message) {
     return reply.status(404).send({ error: "Message not found", code: "NOT_FOUND" });
   }
 
-  const reaction = await prisma.messageReaction.upsert({
-    where: {
-      messageId_userId_emoji: {
-        messageId: params.messageId,
-        userId: currentUser.id,
-        emoji: body.emoji,
-      },
-    },
-    update: {},
-    create: {
-      messageId: params.messageId,
-      userId: currentUser.id,
-      emoji: body.emoji,
-    },
-  });
-
-  return reply.status(201).send({ reaction });
-});
-
-app.delete("/events/:id/messages/:messageId/reactions/:emoji", async (request, reply) => {
-  const currentUser = await requireAuth(request, reply, prisma);
-  const params = await validateRequest(reactionParamsSchema, request.params);
-
-  await canAccessEvent(prisma, params.id, currentUser.id);
-
-  const existing = await prisma.messageReaction.findUnique({
-    where: {
-      messageId_userId_emoji: {
-        messageId: params.messageId,
-        userId: currentUser.id,
-        emoji: params.emoji,
-      },
-    },
-  });
-
-  if (!existing) {
-    return reply.status(404).send({ error: "Reaction not found", code: "NOT_FOUND" });
+  if (message.userId !== currentUser.id) {
+    return reply.status(403).send({ error: "You can only delete your own messages", code: "FORBIDDEN" });
   }
 
-  await prisma.messageReaction.delete({
-    where: { id: existing.id },
+  await prisma.message.delete({ where: { id: params.messageId } });
+
+  chatIo?.to(`channel:${params.channelId}`).emit("channel:message:deleted", {
+    messageId: params.messageId,
+    channelId: params.channelId,
+  });
+
+  return reply.status(204).send();
+});
+
+// PATCH /groups/:groupId/channels/:channelId/messages/:messageId — edit own message
+const editMessageBodySchema = z.object({
+  content: z.string().min(1).max(4000),
+});
+
+app.patch("/groups/:groupId/channels/:channelId/messages/:messageId", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const params = await validateRequest(messageParamsSchema, request.params);
+  const body = await validateRequest(editMessageBodySchema, request.body);
+
+  const message = await prisma.message.findFirst({
+    where: { id: params.messageId, channelId: params.channelId },
+  });
+  if (!message) {
+    return reply.status(404).send({ error: "Message not found", code: "NOT_FOUND" });
+  }
+  if (message.userId !== currentUser.id) {
+    return reply.status(403).send({ error: "Cannot edit another user's message", code: "FORBIDDEN" });
+  }
+
+  const updated = await prisma.message.update({
+    where: { id: params.messageId },
+    data: { content: body.content.trim() },
+    include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } },
+  });
+
+  chatIo?.to(`channel:${params.channelId}`).emit("channel:message:edited", {
+    messageId: params.messageId,
+    channelId: params.channelId,
+    content: updated.content,
+    updatedAt: updated.updatedAt.toISOString(),
+  });
+
+  return reply.send({ message: updated });
+});
+
+// POST /groups/:groupId/channels/:channelId/messages/:messageId/pin — toggle pin (admin+)
+app.post("/groups/:groupId/channels/:channelId/messages/:messageId/pin", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const params = await validateRequest(messageParamsSchema, request.params);
+
+  const membership = await requireGroupMembership(prisma, currentUser.id, params.groupId);
+  const isAdminOrOwner = membership.role === "owner" || membership.role === "admin";
+  if (!isAdminOrOwner) {
+    return reply.status(403).send({ error: "Admin or owner required", code: "FORBIDDEN" });
+  }
+
+  const message = await prisma.message.findFirst({
+    where: { id: params.messageId, channelId: params.channelId },
+    include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } },
+  });
+  if (!message) {
+    return reply.status(404).send({ error: "Message not found", code: "NOT_FOUND" });
+  }
+
+  const updated = await prisma.message.update({
+    where: { id: params.messageId },
+    data: { pinned: !message.pinned },
+    include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } },
+  });
+
+  chatIo?.to(`channel:${params.channelId}`).emit("channel:message:pinned", {
+    messageId: params.messageId,
+    channelId: params.channelId,
+    pinned: updated.pinned,
+  });
+
+  return reply.send({ message: updated });
+});
+
+// POST /groups/:groupId/channels/:channelId/messages/:messageId/react — toggle emoji reaction
+const reactBodySchema = z.object({
+  emoji: z.string().min(1).max(8),
+});
+
+app.post("/groups/:groupId/channels/:channelId/messages/:messageId/react", { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const params = await validateRequest(messageParamsSchema, request.params);
+  const body = await validateRequest(reactBodySchema, request.body);
+
+  await requireGroupMembership(prisma, currentUser.id, params.groupId);
+
+  const message = await prisma.message.findFirst({
+    where: { id: params.messageId, channelId: params.channelId },
+  });
+  if (!message) {
+    return reply.status(404).send({ error: "Message not found", code: "NOT_FOUND" });
+  }
+
+  const existing = await prisma.messageReaction.findUnique({
+    where: { messageId_userId_emoji: { messageId: params.messageId, userId: currentUser.id, emoji: body.emoji } },
+  });
+
+  if (existing) {
+    await prisma.messageReaction.delete({ where: { id: existing.id } });
+    chatIo?.to(`channel:${params.channelId}`).emit("channel:message:unreact", {
+      messageId: params.messageId,
+      channelId: params.channelId,
+      userId: currentUser.id,
+      emoji: body.emoji,
+    });
+    return reply.send({ action: "removed", emoji: body.emoji });
+  } else {
+    await prisma.messageReaction.create({
+      data: { messageId: params.messageId, userId: currentUser.id, emoji: body.emoji },
+    });
+    chatIo?.to(`channel:${params.channelId}`).emit("channel:message:react", {
+      messageId: params.messageId,
+      channelId: params.channelId,
+      userId: currentUser.id,
+      emoji: body.emoji,
+    });
+    return reply.send({ action: "added", emoji: body.emoji });
+  }
+});
+
+// GET /groups/:groupId/channels/:channelId/subscribers — list subscribers (admin+)
+app.get("/groups/:groupId/channels/:channelId/subscribers", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const params = await validateRequest(channelParamsSchema, request.params);
+
+  const membership = await requireGroupMembership(prisma, currentUser.id, params.groupId);
+  const isAdminOrOwner = membership.role === "owner" || membership.role === "admin";
+  if (!isAdminOrOwner) {
+    return reply.status(403).send({ error: "Admin or owner required", code: "FORBIDDEN" });
+  }
+
+  const channel = await prisma.channel.findFirst({
+    where: { id: params.channelId, groupId: params.groupId },
+  });
+  if (!channel) {
+    return reply.status(404).send({ error: "Channel not found", code: "NOT_FOUND" });
+  }
+
+  const subscriptions = await prisma.channelSubscription.findMany({
+    where: { channelId: params.channelId },
+    include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } },
+  });
+
+  return reply.send({ subscribers: subscriptions.map((s) => s.user) });
+});
+
+// PUT /groups/:groupId/channels/:channelId/subscribers/:userId — add subscriber (admin+)
+const subscriberParamsSchema = z.object({
+  groupId: schemas.id,
+  channelId: schemas.id,
+  userId: schemas.id,
+});
+
+app.put("/groups/:groupId/channels/:channelId/subscribers/:userId", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const params = await validateRequest(subscriberParamsSchema, request.params);
+
+  const membership = await requireGroupMembership(prisma, currentUser.id, params.groupId);
+  const isAdminOrOwner = membership.role === "owner" || membership.role === "admin";
+  if (!isAdminOrOwner) {
+    return reply.status(403).send({ error: "Admin or owner required", code: "FORBIDDEN" });
+  }
+
+  const targetMembership = await prisma.membership.findUnique({
+    where: { userId_groupId: { userId: params.userId, groupId: params.groupId } },
+  });
+  if (!targetMembership || targetMembership.status !== "active") {
+    return reply.status(400).send({ error: "User is not an active group member", code: "BAD_REQUEST" });
+  }
+
+  await prisma.channelSubscription.upsert({
+    where: { userId_channelId: { userId: params.userId, channelId: params.channelId } },
+    create: { userId: params.userId, channelId: params.channelId },
+    update: {},
+  });
+
+  return reply.status(204).send();
+});
+
+// DELETE /groups/:groupId/channels/:channelId/subscribers/:userId — remove subscriber (admin+)
+app.delete("/groups/:groupId/channels/:channelId/subscribers/:userId", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const params = await validateRequest(subscriberParamsSchema, request.params);
+
+  const membership = await requireGroupMembership(prisma, currentUser.id, params.groupId);
+  const isAdminOrOwner = membership.role === "owner" || membership.role === "admin";
+  if (!isAdminOrOwner) {
+    return reply.status(403).send({ error: "Admin or owner required", code: "FORBIDDEN" });
+  }
+
+  await prisma.channelSubscription.deleteMany({
+    where: { channelId: params.channelId, userId: params.userId },
   });
 
   return reply.status(204).send();
@@ -4305,48 +5372,85 @@ app.put("/notifications/preferences", { config: { rateLimit: { max: 60, timeWind
 
 const NOTIFICATION_INBOX_TTL_DAYS = 7;
 
-// GET /notifications/inbox — unread notifications for the current user (last 7 days)
+// Helper: resolve which notification types are in_app-enabled for a user (default true)
+async function getEnabledInAppTypes(userId: string): Promise<string[]> {
+  const allTypes = ["chat_message", "event_created", "event_changed", "invite", "rsvp_update", "event_start"];
+  const prefs = await prisma.userNotificationPreference.findMany({
+    where: { userId, channel: "in_app" },
+    select: { type: true, enabled: true },
+  });
+  const prefMap = new Map(prefs.map((p) => [p.type, p.enabled]));
+  return allTypes.filter((t) => prefMap.get(t) !== false);
+}
+
+// GET /notifications/inbox — all notifications for the current user (last 7 days), with readAt
 app.get("/notifications/inbox", { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (request, reply) => {
   const currentUser = await requireAuth(request, reply, prisma);
-
   const cutoff = new Date(Date.now() - NOTIFICATION_INBOX_TTL_DAYS * 24 * 60 * 60 * 1000);
+  const enabledTypes = await getEnabledInAppTypes(currentUser.id);
 
   const notifications = await prisma.notificationEvent.findMany({
     where: {
       recipientId: currentUser.id,
       createdAt: { gte: cutoff },
+      type: { in: enabledTypes },
     },
     orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      type: true,
-      title: true,
-      body: true,
-      url: true,
-      createdAt: true,
-    },
+    select: { id: true, type: true, title: true, body: true, url: true, createdAt: true, readAt: true },
   });
 
   return reply.send({ notifications });
 });
 
-// GET /notifications/inbox/count — unread notification count (last 7 days)
+// GET /notifications/inbox/count — count of UNREAD notifications (last 7 days)
 app.get("/notifications/inbox/count", { config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (request, reply) => {
   const currentUser = await requireAuth(request, reply, prisma);
-
   const cutoff = new Date(Date.now() - NOTIFICATION_INBOX_TTL_DAYS * 24 * 60 * 60 * 1000);
+  const enabledTypes = await getEnabledInAppTypes(currentUser.id);
 
   const count = await prisma.notificationEvent.count({
     where: {
       recipientId: currentUser.id,
       createdAt: { gte: cutoff },
+      type: { in: enabledTypes },
+      readAt: null,
     },
   });
 
   return reply.send({ count });
 });
 
-// DELETE /notifications/inbox/:id — dismiss (delete) a single notification
+// PATCH /notifications/inbox/:id/read — mark a single notification as read
+app.patch("/notifications/inbox/:notificationId/read", { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const params = await validateRequest(z.object({ notificationId: schemas.id }), request.params);
+
+  const updated = await prisma.notificationEvent.updateMany({
+    where: { id: params.notificationId, recipientId: currentUser.id, readAt: null },
+    data: { readAt: new Date() },
+  });
+
+  if (updated.count === 0) {
+    // Either not found or already read — both are fine, return 204
+  }
+
+  return reply.status(204).send();
+});
+
+// PATCH /notifications/inbox/read-all — mark all unread notifications as read
+app.patch("/notifications/inbox/read-all", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const cutoff = new Date(Date.now() - NOTIFICATION_INBOX_TTL_DAYS * 24 * 60 * 60 * 1000);
+
+  await prisma.notificationEvent.updateMany({
+    where: { recipientId: currentUser.id, createdAt: { gte: cutoff }, readAt: null },
+    data: { readAt: new Date() },
+  });
+
+  return reply.status(204).send();
+});
+
+// DELETE /notifications/inbox/:id — permanently delete a single notification
 app.delete("/notifications/inbox/:notificationId", { config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (request, reply) => {
   const currentUser = await requireAuth(request, reply, prisma);
   const params = await validateRequest(
@@ -4354,7 +5458,6 @@ app.delete("/notifications/inbox/:notificationId", { config: { rateLimit: { max:
     request.params,
   );
 
-  // Only delete if it belongs to the current user
   const deleted = await prisma.notificationEvent.deleteMany({
     where: { id: params.notificationId, recipientId: currentUser.id },
   });
@@ -4366,17 +5469,13 @@ app.delete("/notifications/inbox/:notificationId", { config: { rateLimit: { max:
   return reply.status(204).send();
 });
 
-// DELETE /notifications/inbox — dismiss all notifications for the current user
+// DELETE /notifications/inbox — permanently delete all notifications for the current user
 app.delete("/notifications/inbox", { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (request, reply) => {
   const currentUser = await requireAuth(request, reply, prisma);
-
   const cutoff = new Date(Date.now() - NOTIFICATION_INBOX_TTL_DAYS * 24 * 60 * 60 * 1000);
 
   await prisma.notificationEvent.deleteMany({
-    where: {
-      recipientId: currentUser.id,
-      createdAt: { gte: cutoff },
-    },
+    where: { recipientId: currentUser.id, createdAt: { gte: cutoff } },
   });
 
   return reply.status(204).send();
@@ -4463,42 +5562,16 @@ const port = Number(process.env.PORT || 4000);
 const host = process.env.API_HOST || (process.env.NODE_ENV === "production" ? "127.0.0.1" : "0.0.0.0");
 
 // Attach Socket.IO to the underlying HTTP server before listening
-const io = createChatServer(
+chatIo = createChatServer(
   app.server,
   prisma,
   authSecret,
   configuredWebOrigins,
   app.log,
-  async ({ eventId, userId, content }) => {
-    const event = await prisma.event.findUnique({
-      where: { id: eventId },
-      select: {
-        id: true,
-        groupId: true,
-        title: true,
-        tags: { select: { id: true } },
-      },
-    });
-
-    if (!event) {
-      return;
-    }
-
-    await notificationQueue.add("fanout", {
-      type: "chat_message",
-      groupId: event.groupId,
-      actorUserId: userId,
-      eventId: event.id,
-      tagIds: event.tags.map((tag) => tag.id),
-      title: `New message in ${event.title}`,
-      body: content.slice(0, 140),
-      url: `/events/${event.id}`,
-    });
-  },
   async ({ channelId, groupId, userId, content }) => {
     const channel = await prisma.channel.findUnique({
       where: { id: channelId },
-      select: { id: true, name: true },
+      select: { id: true, name: true, tags: { select: { id: true } } },
     });
     if (!channel) return;
     await notificationQueue.add("fanout", {
@@ -4506,7 +5579,7 @@ const io = createChatServer(
       groupId,
       actorUserId: userId,
       channelId: channel.id,
-      tagIds: [],
+      tagIds: channel.tags.map((t) => t.id),
       title: `New message in #${channel.name}`,
       body: content.slice(0, 140),
       url: `/groups/${groupId}/channels/${channel.id}`,
@@ -4516,6 +5589,26 @@ const io = createChatServer(
 
 await app.listen({ port, host });
 
+// Verify SMTP connectivity once at startup (non-blocking)
+void verifyMailTransporter();
+
+// Purge NotificationEvent records older than the inbox TTL.
+// Runs once immediately on startup, then every 24 h.
+const purgeExpiredNotifications = async () => {
+  const cutoff = new Date(Date.now() - NOTIFICATION_INBOX_TTL_DAYS * 24 * 60 * 60 * 1000);
+  const { count } = await prisma.notificationEvent.deleteMany({
+    where: { createdAt: { lt: cutoff } },
+  });
+  if (count > 0) {
+    app.log.info({ deleted: count }, "Purged expired notification events");
+  }
+};
+void purgeExpiredNotifications();
+const _notificationPurgeInterval = setInterval(
+  () => void purgeExpiredNotifications(),
+  24 * 60 * 60 * 1000
+).unref();
+
 // Graceful shutdown
 const gracefulShutdown = async () => {
   await calendarSyncWorker.close();
@@ -4524,7 +5617,7 @@ const gracefulShutdown = async () => {
   await notificationQueue.close();
   workerConnection.disconnect();
   queueConnection.disconnect();
-  await io.close();
+  await chatIo?.close();
   await app.close();
   await prisma.$disconnect();
   redis.disconnect();

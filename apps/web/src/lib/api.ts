@@ -144,7 +144,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     res = await fetch(`${base}${path}`, {
       ...init,
       headers: {
-        ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(init.body !== undefined && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...init.headers,
       },

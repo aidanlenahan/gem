@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useDurationPresetsStore, formatDuration } from '../stores/durationPresetsStore'
+import { MINUTE_OPTIONS } from '../lib/time'
 
 interface Props {
   durationMinutes: number
@@ -14,7 +15,10 @@ export default function DurationPicker({ durationMinutes, onChange, disabled }: 
     presets.includes(durationMinutes) ? 'preset' : 'custom',
   )
   const [customHr, setCustomHr] = useState(() => Math.floor(durationMinutes / 60))
-  const [customMin, setCustomMin] = useState(() => durationMinutes % 60)
+  const [customMin, setCustomMin] = useState(() => {
+    const raw = durationMinutes % 60
+    return MINUTE_OPTIONS.reduce((best, opt) => Math.abs(opt - raw) < Math.abs(best - raw) ? opt : best)
+  })
 
   const handleSelectChange = (value: string) => {
     if (value === 'custom') {
@@ -65,19 +69,20 @@ export default function DurationPicker({ durationMinutes, onChange, disabled }: 
             className="w-20 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
           />
           <span className="text-gray-400 text-sm">hr</span>
-          <input
-            type="number"
-            min="0"
-            max="59"
+          <select
             value={customMin}
             onChange={(e) => {
-              const m = Math.max(0, Math.min(59, Number(e.target.value)))
+              const m = Number(e.target.value) as (typeof MINUTE_OPTIONS)[number]
               setCustomMin(m)
               handleCustomChange(customHr, m)
             }}
             disabled={disabled}
             className="w-20 bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white text-center focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
-          />
+          >
+            {MINUTE_OPTIONS.map((m) => (
+              <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
+            ))}
+          </select>
           <span className="text-gray-400 text-sm">min</span>
         </div>
       )}

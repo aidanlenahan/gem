@@ -17,6 +17,15 @@ import { apiFetch } from '../lib/api'
 import { Phase7DebugPage } from './Phase7DebugPage'
 import { Phase9DiagnosticsPage } from './Phase9DiagnosticsPage'
 
+type InviteLink = {
+  id: string
+  code: string
+  expiresAt: string | null
+  singleUse: boolean
+  usedAt: string | null
+  createdAt: string
+}
+
 type DevConfig = {
   registrationInviteCode: string
   groupCreationInviteCode: string
@@ -24,9 +33,18 @@ type DevConfig = {
   groupCreationBetaRequired: boolean
   groupCodes: Array<{ id: string; code: string; createdAt: string }>
   registrationCodes: Array<{ id: string; code: string; createdAt: string }>
+  inviteLinks: InviteLink[]
+  mediaUploadEnabled: boolean
+  mediaUploadCode: string
+  mediaStorage: {
+    usedBytes: number
+    maxBytes: number
+    usedFormatted: string
+    maxFormatted: string
+  }
 }
 
-type Tab = 'config' | 'phase7' | 'phase9' | 'email'
+type Tab = 'config' | 'media' | 'phase7' | 'phase9' | 'email'
 
 export default function DeveloperPage() {
   const { user } = useAuthStore()
@@ -61,9 +79,10 @@ function DeveloperContent() {
       </div>
 
       {/* Tab bar */}
-      <div className="flex gap-2 mb-6 border-b border-gray-800 pb-1">
+      <div className="flex gap-2 mb-6 border-b border-gray-800 pb-1 flex-wrap">
         {([
           { key: 'config', label: 'Config' },
+          { key: 'media', label: 'Media' },
           { key: 'phase7', label: 'Phase 7 Debug' },
           { key: 'phase9', label: 'Phase 9 Diagnostics' },
           { key: 'email', label: 'Email Debug' },
@@ -84,6 +103,7 @@ function DeveloperContent() {
       </div>
 
       {activeTab === 'config' && <ConfigTab />}
+      {activeTab === 'media' && <MediaTab />}
       {activeTab === 'phase7' && <Phase7DebugPage />}
       {activeTab === 'phase9' && <Phase9DiagnosticsPage />}
       {activeTab === 'email' && <EmailDebugTab />}
@@ -121,6 +141,14 @@ function ConfigTab() {
   const [regGenMsg, setRegGenMsg] = useState('')
   const [regDeleteLoading, setRegDeleteLoading] = useState<string | null>(null)
   const [regCopiedId, setRegCopiedId] = useState<string | null>(null)
+
+  // Invite links state
+  const [inviteLinkExpiresAt, setInviteLinkExpiresAt] = useState('')
+  const [inviteLinkSingleUse, setInviteLinkSingleUse] = useState(false)
+  const [inviteLinkGenLoading, setInviteLinkGenLoading] = useState(false)
+  const [inviteLinkGenMsg, setInviteLinkGenMsg] = useState('')
+  const [inviteLinkDeleteLoading, setInviteLinkDeleteLoading] = useState<string | null>(null)
+  const [inviteLinkCopiedId, setInviteLinkCopiedId] = useState<string | null>(null)
 
   const loadConfig = async () => {
     setLoading(true)
@@ -257,6 +285,52 @@ function ConfigTab() {
       await navigator.clipboard.writeText(code)
       setRegCopiedId(id)
       setTimeout(() => setRegCopiedId(null), 2000)
+    } catch {
+      // fallback
+    }
+  }
+
+  const handleGenInviteLink = async () => {
+    setInviteLinkGenLoading(true)
+    setInviteLinkGenMsg('')
+    try {
+      await apiFetch('/admin/dev/invite-links', {
+        method: 'POST',
+        body: JSON.stringify({
+          expiresAt: inviteLinkExpiresAt || undefined,
+          singleUse: inviteLinkSingleUse,
+        }),
+      })
+      await loadConfig()
+      setInviteLinkExpiresAt('')
+      setInviteLinkSingleUse(false)
+      setInviteLinkGenMsg('Link created')
+      setTimeout(() => setInviteLinkGenMsg(''), 3000)
+    } catch (err) {
+      setInviteLinkGenMsg(err instanceof Error ? err.message : 'Failed to create')
+    } finally {
+      setInviteLinkGenLoading(false)
+    }
+  }
+
+  const handleDeleteInviteLink = async (id: string) => {
+    setInviteLinkDeleteLoading(id)
+    try {
+      await apiFetch(`/admin/dev/invite-links/${id}`, { method: 'DELETE' })
+      setConfig((prev) => prev ? { ...prev, inviteLinks: prev.inviteLinks.filter((l) => l.id !== id) } : prev)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Delete failed')
+    } finally {
+      setInviteLinkDeleteLoading(null)
+    }
+  }
+
+  const handleCopyInviteLink = async (token: string, id: string) => {
+    try {
+      const url = `${window.location.origin}/register?ref=${token}`
+      await navigator.clipboard.writeText(url)
+      setInviteLinkCopiedId(id)
+      setTimeout(() => setInviteLinkCopiedId(null), 2000)
     } catch {
       // fallback
     }
@@ -541,6 +615,283 @@ function ConfigTab() {
           </div>
         )}
       </section>
+
+      {/* Account Creation Invite Links */}
+      <section className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
+        <div>
+          <h3 className="text-base font-semibold text-white">Account Creation Invite Links</h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Shareable URLs that pre-fill registration. Set an expiry date, make single-use, or both.
+          </p>
+        </div>
+
+        {/* Create form */}
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Expires at (optional)</label>
+              <input
+                type="datetime-local"
+                value={inviteLinkExpiresAt}
+                onChange={(e) => setInviteLinkExpiresAt(e.target.value)}
+                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer pb-1.5">
+              <input
+                type="checkbox"
+                checked={inviteLinkSingleUse}
+                onChange={(e) => setInviteLinkSingleUse(e.target.checked)}
+                className="w-4 h-4 rounded accent-indigo-500"
+              />
+              <span className="text-sm text-gray-300">Single-use</span>
+            </label>
+            <button
+              onClick={handleGenInviteLink}
+              disabled={inviteLinkGenLoading}
+              className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg"
+            >
+              {inviteLinkGenLoading ? 'Creating...' : 'Generate Link'}
+            </button>
+            {inviteLinkGenMsg && (
+              <span className={`text-xs ${inviteLinkGenMsg.startsWith('Failed') || inviteLinkGenMsg.includes('error') ? 'text-red-400' : 'text-emerald-400'}`}>
+                {inviteLinkGenMsg}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Links list */}
+        {config.inviteLinks.length === 0 ? (
+          <p className="text-gray-500 text-sm">No active invite links.</p>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-xs text-gray-500 uppercase tracking-wider font-semibold">
+              Active ({config.inviteLinks.length})
+            </p>
+            <div className="divide-y divide-gray-800 rounded-lg overflow-hidden border border-gray-800">
+              {config.inviteLinks.map((link) => {
+                const expired = link.expiresAt ? new Date(link.expiresAt) < new Date() : false
+                return (
+                  <div key={link.id} className={`flex items-start gap-3 px-4 py-3 ${expired ? 'opacity-50' : 'bg-gray-800/60'}`}>
+                    <div className="flex-1 min-w-0 space-y-0.5">
+                      <code className="font-mono text-xs text-indigo-300 break-all">
+                        {window.location.origin}/register?ref={link.code}
+                      </code>
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {link.singleUse && (
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${link.usedAt ? 'bg-gray-700 text-gray-400' : 'bg-amber-900/40 text-amber-300'}`}>
+                            {link.usedAt ? 'Used' : 'Single-use'}
+                          </span>
+                        )}
+                        {link.expiresAt && (
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${expired ? 'bg-red-900/40 text-red-300' : 'bg-gray-700 text-gray-400'}`}>
+                            {expired ? 'Expired' : `Expires ${new Date(link.expiresAt).toLocaleString()}`}
+                          </span>
+                        )}
+                        {!link.singleUse && !link.expiresAt && (
+                          <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-emerald-900/40 text-emerald-300">
+                            Permanent
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => handleCopyInviteLink(link.code, link.id)}
+                        className="text-xs text-gray-500 hover:text-gray-300 transition-colors px-2 py-1"
+                      >
+                        {inviteLinkCopiedId === link.id ? 'Copied!' : 'Copy'}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteInviteLink(link.id)}
+                        disabled={inviteLinkDeleteLoading === link.id}
+                        className="text-xs text-red-500 hover:text-red-400 disabled:opacity-50 transition-colors px-2 py-1"
+                      >
+                        {inviteLinkDeleteLoading === link.id ? '...' : 'Revoke'}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  )
+}
+
+function MediaTab() {
+  const [config, setConfig] = useState<DevConfig | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [editCode, setEditCode] = useState('')
+  const [codeEditing, setCodeEditing] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const data = await apiFetch<DevConfig>('/admin/dev/config')
+      setConfig(data)
+      setEditCode(data.mediaUploadCode)
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Failed to load')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useState(() => { load() })
+
+  const toggleEnabled = async () => {
+    if (!config) return
+    setSaving(true)
+    setMsg('')
+    try {
+      const data = await apiFetch<Partial<DevConfig>>('/admin/dev/config', {
+        method: 'PATCH',
+        body: JSON.stringify({ mediaUploadEnabled: !config.mediaUploadEnabled }),
+      })
+      setConfig((prev) => prev ? { ...prev, mediaUploadEnabled: data.mediaUploadEnabled ?? !prev.mediaUploadEnabled } : prev)
+      setMsg(data.mediaUploadEnabled ? 'Media uploads enabled' : 'Media uploads disabled')
+      setTimeout(() => setMsg(''), 2500)
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Failed to update')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const saveCode = async () => {
+    setSaving(true)
+    setMsg('')
+    try {
+      const data = await apiFetch<Partial<DevConfig>>('/admin/dev/config', {
+        method: 'PATCH',
+        body: JSON.stringify({ mediaUploadCode: editCode.trim() }),
+      })
+      setConfig((prev) => prev ? { ...prev, mediaUploadCode: data.mediaUploadCode ?? '' } : prev)
+      setEditCode(data.mediaUploadCode ?? '')
+      setCodeEditing(false)
+      setMsg('Code saved')
+      setTimeout(() => setMsg(''), 2500)
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return <p className="text-gray-400 text-sm">Loading...</p>
+  if (!config) return null
+
+  const usedPct = config.mediaStorage
+    ? Math.min(100, Math.round((config.mediaStorage.usedBytes / config.mediaStorage.maxBytes) * 100))
+    : 0
+
+  return (
+    <div className="space-y-6">
+      {/* Global enable / disable */}
+      <section className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold text-white">Media Uploads</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              When disabled, no group can use media uploads (profile photos are unaffected).
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={toggleEnabled}
+            disabled={saving}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-50 ${
+              config.mediaUploadEnabled ? 'bg-indigo-600' : 'bg-gray-700'
+            }`}
+            role="switch"
+            aria-checked={config.mediaUploadEnabled}
+          >
+            <span
+              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ${
+                config.mediaUploadEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </button>
+        </div>
+        <p className={`text-xs font-medium ${config.mediaUploadEnabled ? 'text-emerald-400' : 'text-amber-400'}`}>
+          {config.mediaUploadEnabled ? 'Enabled — groups can activate media uploads' : 'Disabled — all group media uploads blocked'}
+        </p>
+        {msg && <p className="text-xs text-emerald-400">{msg}</p>}
+      </section>
+
+      {/* Unlock code */}
+      <section className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
+        <div>
+          <h3 className="text-base font-semibold text-white">Media Unlock Code</h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Group admins must enter this code to activate media uploads for their group. Leave blank to allow any admin to enable it freely.
+          </p>
+        </div>
+        {codeEditing ? (
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={editCode}
+              onChange={(e) => setEditCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 64))}
+              placeholder="Leave blank to remove code requirement"
+              spellCheck={false}
+              autoComplete="off"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-white font-mono tracking-wider placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={saveCode}
+                disabled={saving}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg"
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+              <button
+                onClick={() => { setCodeEditing(false); setEditCode(config.mediaUploadCode) }}
+                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium rounded-lg"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <code className="flex-1 font-mono text-xl tracking-widest text-indigo-300 bg-gray-800 rounded-lg px-4 py-2.5 select-all">
+              {config.mediaUploadCode || '(no code — any admin can enable)'}
+            </code>
+            <button
+              onClick={() => setCodeEditing(true)}
+              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium rounded-lg border border-gray-700"
+            >
+              Edit
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* Storage usage */}
+      {config.mediaStorage && (
+        <section className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-3">
+          <h3 className="text-base font-semibold text-white">Server Storage</h3>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-400">{config.mediaStorage.usedFormatted} used</span>
+            <span className="text-gray-500">of {config.mediaStorage.maxFormatted} allotted</span>
+          </div>
+          <div className="w-full bg-gray-800 rounded-full h-2.5">
+            <div
+              className={`h-2.5 rounded-full transition-all ${usedPct > 90 ? 'bg-red-500' : usedPct > 70 ? 'bg-amber-500' : 'bg-indigo-500'}`}
+              style={{ width: `${usedPct}%` }}
+            />
+          </div>
+          <p className="text-xs text-gray-500">{usedPct}% used — server hard cap is 20 GB across all groups</p>
+        </section>
+      )}
     </div>
   )
 }

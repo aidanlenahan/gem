@@ -19,6 +19,9 @@ import {
   useUpdateTag,
   useMuteMember,
   useUnmuteMember,
+  useGroupMedia,
+  useDeleteGroupMediaAsset,
+  useUpdateGroupMediaSettings,
 } from '../hooks/useGroups'
 import { useAuthStore } from '../stores/authStore'
 import { useToast } from '../hooks/useToast'
@@ -69,6 +72,7 @@ export default function GroupManagePage() {
     actor: { id: string; name: string; avatarUrl?: string | null }
     targetUser?: { id: string; name: string } | null
   }
+  const [activeTab, setActiveTab] = useState<'general' | 'media'>('general')
   const [showAuditLog, setShowAuditLog] = useState(false)
   const [auditLogPage, setAuditLogPage] = useState(0)
   const auditLogSectionRef = useRef<HTMLElement>(null)
@@ -372,7 +376,7 @@ export default function GroupManagePage() {
   }
 
   return (
-    <div className="px-4 py-6 sm:p-6 max-w-2xl mx-auto space-y-8">
+    <div className="px-4 py-6 sm:p-6 max-w-2xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div>
@@ -381,6 +385,30 @@ export default function GroupManagePage() {
         </div>
         <PageToolbar backTo={`/groups/${groupId}`} />
       </div>
+
+      {/* Tab bar */}
+      <div className="flex gap-1 border-b border-gray-800 pb-0">
+        {(['general', 'media'] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors capitalize ${
+              activeTab === tab
+                ? 'text-white border-b-2 border-indigo-500 -mb-px'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'media' && (
+        <GroupMediaSubPage groupId={groupId!} isAdmin={isAdmin} />
+      )}
+
+      {activeTab === 'general' && <>
 
       {/* ── Group Info ── */}
       <section className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
@@ -1069,6 +1097,262 @@ export default function GroupManagePage() {
           })()}
         </section>
       )}
+
+      </>}
+    </div>
+  )
+}
+
+// ============================================================================
+// GroupMediaSubPage — admin media management
+// ============================================================================
+
+function fmtBytes(b: number): string {
+  if (b >= 1073741824) return `${(b / 1073741824).toFixed(1)} GB`
+  if (b >= 1048576) return `${(b / 1048576).toFixed(1)} MB`
+  if (b >= 1024) return `${(b / 1024).toFixed(1)} KB`
+  return `${b} B`
+}
+
+function GroupMediaSubPage({ groupId, isAdmin }: { groupId: string; isAdmin: boolean }) {
+  const toast = useToast()
+  const { data, isLoading, refetch } = useGroupMedia(groupId)
+  const deleteAsset = useDeleteGroupMediaAsset(groupId)
+  const updateSettings = useUpdateGroupMediaSettings(groupId)
+
+  const [unlockCode, setUnlockCode] = useState('')
+  const [limitMB, setLimitMB] = useState(100)
+  const [savingSettings, setSavingSettings] = useState(false)
+  const [settingsMsg, setSettingsMsg] = useState('')
+
+  useEffect(() => {
+    if (data?.settings) {
+      setLimitMB(Math.round(data.settings.storageLimitBytes / (1024 * 1024)))
+    }
+  }, [data?.settings])
+
+  if (!isAdmin) {
+    return <p className="text-gray-500 text-sm">Only admins can manage group media.</p>
+  }
+
+  if (isLoading) return <Spinner />
+
+  const settings = data?.settings
+  const media = data?.media ?? []
+
+  const handleToggleEnabled = async () => {
+    setSavingSettings(true)
+    setSettingsMsg('')
+    try {
+      await updateSettings.mutateAsync({
+        mediaUploadEnabled: !settings?.enabled,
+        ...(!settings?.enabled && unlockCode ? { unlockCode } : {}),
+      })
+      setUnlockCode('')
+      setSettingsMsg(settings?.enabled ? 'Media uploads disabled' : 'Media uploads enabled')
+      setTimeout(() => setSettingsMsg(''), 2500)
+    } catch (err) {
+      setSettingsMsg(err instanceof Error ? err.message : 'Failed to update')
+    } finally {
+      setSavingSettings(false)
+    }
+  }
+
+  const handleSaveLimit = async () => {
+    setSavingSettings(true)
+    setSettingsMsg('')
+    try {
+      await updateSettings.mutateAsync({ mediaStorageLimitBytes: limitMB * 1024 * 1024 })
+      setSettingsMsg('Storage limit saved')
+      setTimeout(() => setSettingsMsg(''), 2500)
+    } catch (err) {
+      setSettingsMsg(err instanceof Error ? err.message : 'Failed to save')
+    } finally {
+      setSavingSettings(false)
+    }
+  }
+
+  const handleToggleNonAdmin = async () => {
+    setSavingSettings(true)
+    try {
+      await updateSettings.mutateAsync({ mediaUploadNonAdminEnabled: !settings?.nonAdminEnabled })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update')
+    } finally {
+      setSavingSettings(false)
+    }
+  }
+
+  const handleDelete = async (assetId: string) => {
+    try {
+      await deleteAsset.mutateAsync(assetId)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete')
+    }
+  }
+
+  const usedPct = settings
+    ? Math.min(100, Math.round((settings.usedBytes / settings.storageLimitBytes) * 100))
+    : 0
+
+  return (
+    <div className="space-y-6">
+      {/* Settings card */}
+      <section className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-5">
+        <h3 className="text-base font-semibold text-white">Media Settings</h3>
+
+        {/* Enable / disable */}
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm text-gray-200">Allow media uploads</p>
+            <p className="text-xs text-gray-500">Members can upload photos to events in this group</p>
+          </div>
+          <button
+            type="button"
+            onClick={handleToggleEnabled}
+            disabled={savingSettings}
+            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 disabled:opacity-50 ${
+              settings?.enabled ? 'bg-indigo-600' : 'bg-gray-700'
+            }`}
+            role="switch"
+            aria-checked={settings?.enabled}
+          >
+            <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${settings?.enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+          </button>
+        </div>
+
+        {/* Unlock code input (shown when trying to enable) */}
+        {!settings?.enabled && (
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Unlock code (if required by admin)</label>
+            <input
+              type="text"
+              value={unlockCode}
+              onChange={(e) => setUnlockCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+              placeholder="Enter code to enable"
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm font-mono placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+        )}
+
+        {/* Non-admin uploads */}
+        {settings?.enabled && (
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm text-gray-200">Allow non-admin uploads</p>
+              <p className="text-xs text-gray-500">When off, only owners and admins can upload</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleToggleNonAdmin}
+              disabled={savingSettings}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 disabled:opacity-50 ${
+                settings.nonAdminEnabled ? 'bg-indigo-600' : 'bg-gray-700'
+              }`}
+              role="switch"
+              aria-checked={settings.nonAdminEnabled}
+            >
+              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${settings.nonAdminEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </div>
+        )}
+
+        {/* Storage limit */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-sm text-gray-200">Storage limit</label>
+            <span className="text-sm font-mono text-indigo-300">{limitMB} MB</span>
+          </div>
+          <input
+            type="range"
+            min={10}
+            max={1024}
+            step={10}
+            value={limitMB}
+            onChange={(e) => setLimitMB(Number(e.target.value))}
+            className="w-full accent-indigo-500"
+          />
+          <div className="flex justify-between text-xs text-gray-600">
+            <span>10 MB</span>
+            <span>1 GB (max)</span>
+          </div>
+          <button
+            onClick={handleSaveLimit}
+            disabled={savingSettings}
+            className="mt-1 px-4 py-1.5 text-xs font-medium bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 rounded-lg disabled:opacity-50"
+          >
+            {savingSettings ? 'Saving...' : 'Save limit'}
+          </button>
+        </div>
+
+        {settingsMsg && (
+          <p className={`text-xs ${settingsMsg.toLowerCase().includes('fail') || settingsMsg.toLowerCase().includes('invalid') ? 'text-red-400' : 'text-emerald-400'}`}>
+            {settingsMsg}
+          </p>
+        )}
+
+        {/* Usage bar */}
+        {settings && (
+          <div className="space-y-1.5 pt-1">
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>{fmtBytes(settings.usedBytes)} used</span>
+              <span>of {fmtBytes(settings.storageLimitBytes)}</span>
+            </div>
+            <div className="w-full bg-gray-800 rounded-full h-2">
+              <div
+                className={`h-2 rounded-full ${usedPct > 90 ? 'bg-red-500' : usedPct > 70 ? 'bg-amber-500' : 'bg-indigo-500'}`}
+                style={{ width: `${usedPct}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Media list */}
+      <section className="bg-gray-900 border border-gray-800 rounded-xl p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold text-white">All Uploads</h3>
+          <button
+            onClick={() => refetch()}
+            className="text-xs text-gray-500 hover:text-gray-300 px-2 py-1 rounded bg-gray-800 hover:bg-gray-700"
+          >
+            Refresh
+          </button>
+        </div>
+
+        {media.length === 0 ? (
+          <p className="text-gray-500 text-sm">No media uploaded yet.</p>
+        ) : (
+          <div className="divide-y divide-gray-800">
+            {media.map((asset) => (
+              <div key={asset.id} className="flex items-center gap-3 py-3">
+                {/* Thumbnail */}
+                <a href={asset.url} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                  <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-800">
+                    <img src={asset.url} alt={asset.filename} className="w-full h-full object-cover" />
+                  </div>
+                </a>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-200 truncate">{asset.uploader?.name ?? 'Unknown'}</p>
+                  <p className="text-xs text-gray-500 truncate">{asset.event.title}</p>
+                  <p className="text-xs text-gray-600">{fmtBytes(asset.sizeBytes)} · {new Date(asset.createdAt).toLocaleDateString()}</p>
+                </div>
+
+                {/* Delete */}
+                <button
+                  onClick={() => handleDelete(asset.id)}
+                  disabled={deleteAsset.isPending}
+                  className="shrink-0 text-xs text-red-500 hover:text-red-400 px-2 py-1 rounded hover:bg-red-900/20 disabled:opacity-50 transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   )
 }

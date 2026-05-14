@@ -2,6 +2,10 @@
 set -euo pipefail
 cd /var/www/gem
 
+START_TIME=$SECONDS
+
+sudo -v
+
 echo "==> Building API..."
 npm --workspace apps/api run build
 
@@ -18,5 +22,7 @@ echo "==> Done. Waiting for API to be ready..."
 sleep 2
 journalctl -u gem-api --since "5 seconds ago" --no-pager | grep -E "mailer|Listening|listening|started|error" || true
 
+ELAPSED=$((SECONDS - START_TIME))
 echo ""
+echo "Deploy completed in ${ELAPSED}s"
 echo "Live logs: journalctl -u gem-api -f"
