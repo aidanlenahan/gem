@@ -17,12 +17,6 @@ type UpdateMeResponse = {
   }
 }
 
-type UploadUrlResponse = {
-  uploadUrl: string
-  fileKey: string
-  publicUrl: string
-}
-
 export default function ProfilePage() {
   const { user, login, token } = useAuthStore()
   const toast = useToast()
@@ -38,25 +32,50 @@ export default function ProfilePage() {
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please select an image file')
+
+    const allowed = ['image/jpeg', 'image/png', 'image/webp']
+    if (!allowed.includes(file.type)) {
+      toast.error('Only JPG, PNG, or WebP images are allowed')
+      if (avatarInputRef.current) avatarInputRef.current.value = ''
       return
     }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Profile photo must be under 2 MB')
+      if (avatarInputRef.current) avatarInputRef.current.value = ''
+      return
+    }
+
+    // Dimension check: max 800×800
+    const checkDimensions = () => new Promise<boolean>((resolve) => {
+      const url = URL.createObjectURL(file)
+      const img = new Image()
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img.width <= 800 && img.height <= 800) }
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(false) }
+      img.src = url
+    })
+    if (!(await checkDimensions())) {
+      toast.error('Profile photo must be 800×800 px or smaller')
+      if (avatarInputRef.current) avatarInputRef.current.value = ''
+      return
+    }
+
+    const formData = new FormData()
+    formData.append('file', file)
+
     setUploadingAvatar(true)
     try {
-      const { uploadUrl, publicUrl } = await apiFetch<UploadUrlResponse>('/media/avatar-upload-url', {
+      const { avatarUrl: newUrl } = await apiFetch<{ avatarUrl: string }>('/users/me/avatar', {
         method: 'POST',
-        body: JSON.stringify({ filename: file.name, contentType: file.type }),
+        body: formData,
       })
-      await fetch(uploadUrl, {
-        method: 'PUT',
-        body: file,
-        headers: { 'Content-Type': file.type },
-      })
-      setAvatarUrl(publicUrl)
-      toast.success('Photo uploaded — save your profile to apply it')
-    } catch {
-      toast.error('Failed to upload photo')
+      setAvatarUrl(newUrl)
+      if (token && user) {
+        login(token, { ...user, avatarUrl: newUrl })
+      }
+      toast.success('Profile photo updated')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to upload photo'
+      toast.error(msg)
     } finally {
       setUploadingAvatar(false)
       if (avatarInputRef.current) avatarInputRef.current.value = ''
@@ -142,11 +161,11 @@ export default function ProfilePage() {
                   Remove
                 </button>
               )}
-              <p className="text-xs text-gray-500 mt-1">JPG, PNG, or GIF</p>
+              <p className="text-xs text-gray-500 mt-1">JPG, PNG, or WebP · max 800×800 px · 2 MB</p>
               <input
                 ref={avatarInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp"
                 className="hidden"
                 onChange={handleAvatarUpload}
               />

@@ -1,73 +1,133 @@
 # Todo
 
-Consolidated pending items from `todo.md` and `todo.txt`. Completed entries were moved to `tasks.txt`.
-
-## App
-- [ ] Fix separate column when subscribing to URL in Google Calendar. Fixable?
+All tasks — completed and pending. Completed entries from `tasks.txt` are included here for reference.
 
 ## Launch checklist
 - [ ] Step 13: External end-to-end validation from non-origin device (mobile data + separate network laptop)
 - [ ] Step 14: Reboot persistence verification
 - [ ] Step 15: Uptime Kuma rollout
 - [ ] Step 16: PBS backup integration + restore test
+================
+## Channel chat — implementation checklist
 
-## General
-- [ ] update favicon and <title> block for all pages
-- [x] update all email notifications to have accurate links
-- [ ] login links security hardening? 
-- [x] add changing member roles (demote/promote) to audit log in settings, add other things too as well as export functionality
-- [x] add enable push notifications pop up if notis are not enabled
+### Socket / connection
+- [x] Shared socket singleton — `useChannelChat` opens a new Socket.IO connection on every mount; extract a global socket manager so one connection is reused per session
+- [x] Reconnect feedback — show a toast or top banner when the socket drops and re-connects so the user knows messages may have been missed
+- [x] Surface rate-limit error — backend emits `error` event with code `RATE_LIMITED` but the UI silently ignores it; show the retry message to the user
+- [x] Emit `channel:typing:stop` from the frontend (currently only `typing:start` is sent and the indicator fades via a 3-second client timeout)
+
+### Message display UX
+- [x] Auto-scroll only when already at bottom — currently scrolls on every new message even if the user scrolled up to read history
+- [x] "Jump to bottom" button — appears when scrolled up, dismisses when at bottom
+- [x] Message grouping — consecutive messages from the same user collapse avatar/name into a single visual block (like Discord/Slack)
+- [x] Optimistic send — add the message to local state immediately on send, replace/remove if server echoes it back or errors
+
+### Message actions
+- [x] Emoji reactions — backend schema (`MessageReaction`) is in place; need socket events (`channel:message:react`, `channel:message:unreact`), REST fallback, and the hover-to-react UI
+- [x] Delete own message — REST `DELETE /groups/:groupId/channels/:channelId/messages/:messageId` + socket broadcast `channel:message:deleted`; remove from UI on receipt
+- [x] Edit own message — REST `PATCH` + socket broadcast `channel:message:edited`; show edited indicator
+- [x] Pin message in channel — socket event + REST endpoint; surface pinned messages in a collapsible banner at the top of the chat (schema `pinned` field already exists on `Message`)
+- [x] message reactions do not show immediately, only on reload
+- [x] pin indicator for already-pinned messages
+- [x] be able to unpin messages from the pop up on the top of the chat. have the pinned messages view toggle if click on the thumbtack button. when in hidden mode, it should only show the thumbtack on the RIGHT side. when expanded, it expands to a modal, showing the pinned 
+- [ ] when the keyboard is clicked, make the header smaller and go slightly farther up towards the top screen border on mobile.
+- [ ] there is no way to pin messages on mobile--look into making long press functionality to pin/delete messages. make the chat text slightly bigger too.
+- [x] figure out different way to pin the upper banner--everything we have tried has not worked.
+
+### Channel management
+- [x] Delete channel — REST `DELETE /groups/:groupId/channels/:channelId` (admin+, non-general only); remove from sidebar on success
+- [x] Rename channel — REST `PATCH /groups/:groupId/channels/:channelId` (admin+); reflect in sidebar and header
+- [x] Manage invite-only channel members — admin UI to add/remove users from `ChannelSubscription`; currently only self-subscribe/unsubscribe exists
+
+### Unread / notifications
+- [x] Last-read tracking — new `ChannelReadState` model (migration 20260508120000); upserted via `POST /channels/:id/read`
+- [x] Unread badge on channel list items — unreadCount included in channel list response; badge shown in sidebar + mobile drawer
+- [x] Mark channel read on focus — called on channelId change in ChannelPage
+
+### desktop
+- [ ] fix window sizing, inconsistent sizing upon divs
+
+### Mobile
+- [x] Mobile channel drawer — hamburger button in mobile header opens slide-in drawer with full channel list
+- [x] fix auto zoom with channel page, when keyboard is clicked messes up zoom
+    - [x] pin top bar to the top when keyboard is displayed
+    - [x] get rid of webkit keyboard bar above keyboard to maximize available screen space
+    - [x] fix scroll/window issues
+
+### Later / stretch
+- [ ] @mention system — parse `@name` in message content, notify the mentioned user
+- [ ] Message search — `GET /groups/:groupId/channels/:channelId/messages?q=` full-text search
+- [ ] File / image attachments in channel messages
+=====================
+## App — pending
+- [ ] Google Calendar URL subscription shows feed as a separate calendar ("Other calendars" in sidebar, separate column in day view).
+      NOT a bug in the ICS feed — this is Google Calendar's by-design behavior for all external URL subscriptions.
+      Events can never be merged into the user's primary Google Calendar via a feed URL; that would require Google Calendar API + OAuth.
+      The webcal:// link (already in the UI) is the better path: Apple Calendar and Outlook treat subscribed feeds as part of the unified view.
+      Resolution: won't fix. Consider adding a UI note that Google Calendar shows this as a separate calendar (expected).
+- [ ] pick and update favicon for all pages
+- [ ] login links security hardening?
 - [ ] add accent color setting per user
-- [x] get rid of event chat
-- [ ] group channels
-    [ ] general channel for all groups
-    [ ] manual channel creation (admins only)
-    [ ] can assign tags to channels so anyone subscribed to tag will also get notified for channel
-- [ ] fix media upload with storage limits per user
+- [ ] media upload
+    - [ ] fix media upload with storage limits per user
+- [ ] implement dev email (Mailpit or MailHog for local SMTP capture)
+- [ ] dev vs prod instance — decide on deployment strategy (separate .env.production, MinIO bucket, Redis)
+- [ ] recurring events (RRULE support, recurrenceRule on Event model)
+- [ ] fix sizing of event creation page on mobile
+- [x] on pages external of the app (so like /home, /contact, /help pages), top right hover dropdown hangs for 200ms when hover off
+- [/] PWA install guide for iOS and Android (autodetect) and annoying badges if detected no pwa
+- [x] if make an invite only channel chat, have the user who created that auto-join the chat. as of now i have to manually join a channel i created myself to send messages.
+- [x] in channel chat, make 'invite only' badge into the lock glyph, same glyph as the private event glyph
+- [/] add reply to a message functionality in message actions
+- [ ] docs/release notes/help articles? patch notes? versions? github link?
+- [ ] specify which user sent message in notifications
+- [ ] make sure safe for git commit and push
+- [ ] text sizing/accessibility features
+- [ ] add verbose exif metadata to uploaded media
+- [ ] add media tab to group page sorted by date
 
-- [ ] fully implement notifications page: api-gem.aidanlenahan.com/notifications/inbox:1  Failed to load resource: the server responded with a status of 404 ()
-api-gem.aidanlenahan.com/notifications/inbox:1  Failed to load resource: the server responded with a status of 404 ()
-api-gem.aidanlenahan.com/notifications/inbox:1  Failed to load resource: the server responded with a status of 404 ()
-    - [ ] put 'open in full screen button' in header of Notifications modal to open notifications in its own page
-    - [ ] 5 most recent notifications on the notification modal
-    - [ ] add in-app column for notifications in the notifications section of settings, all on by default when create account
-        - this defines what activities will show up in the in-app notifications section
-
-- [ ] add PWA install guide
-- [x] add enable push notification reminder on PWA if notis not installed
-- [x] refine notis for everything on noti list besides new event create 
-    Chat Messages - chat functionality not implemented yet, don't worry about it yet			
-    New Events - works just fine
-    Event Changes - doesn't work for push, in app or email
-    Invitations	- works for all		
-    RSVP Updates - doesn't work for push, in app or email
-REWIRED '/' LOGIC: DONE 2026-04-29
-
-- [x] question mark glyph, works on desktop
-    - [x] make sure works on PWA
-    - [x] add tabs in modal: one for website, one for iOS PWA, and one for Android PWA
-        - [x] iOS PWA instructions: go to settings > notifications > GEM > Allow notifications
-        - [x] Android PWA instructions: open Chrome ⋮ > Settings > Site settings > Notifications > find GEM > Allow
-
-- [x] on private events, mark event as private with a lock glyph. additionally, make sure that the private event checkbox in the event creation page works, and when it is a private event it doesn't notify everyone. also, when you invite someone, make sure that does not make it a private event automatically.
-- [ ] make sure no one gets notified for anything tied to past events
-- [ ] on private events, display list of users who were invited
-- [ ] when click calendar button in events, switch to pop-up modal
-    - [ ] make calendar link on per user basis, all users get their own link. get rid of regen link feature.
-    - [ ] mini calendar settings section where user can adjust which events are shown:
-        - select which tags are displayed on calendar
-        - OR only display events that RSVP Yes or Maybe to
-        - OR display all events
-        - all of these settings should be on per user basis, not group or userwide
-
-- [ ] add get notified feature on event start for RSVP yes events
-- [ ] put X next to each invited user on 'invite users' modal for admins, owners, and event creator to leverage
-- [ ] account creation code invite link in developer panel, devs can decide when link expires or expire it on click
-    - [ ] add functionality for account creation via invite link page, maybe '?ref=" in url? whichever is most secure
-
-
-
-LATER 
+## Later
 - [ ] waitinglist to make account
 - [ ] demo mode (not logged in, temp session)
-- [ ] add 'social' functionality? can add friends via invite link, can search people by username global search, can see mutual groups [DO THIS LATER]
+- [ ] add 'social' functionality (friends via invite link, global username search, mutual groups)
+- [ ] verify account via alternative channel (WhatsApp, Telegram, SMS)
+
+================
+## Suggested features
+
+### Events
+- [ ] Event reminders — `scheduleEventStartNotification` is wired and queued but never called on event create/update; hook it in so RSVP-yes members get a push/email N minutes before start (configurable per-user: 15 min, 1 hr, 1 day)
+- [ ] Waitlist — when `maxAttendees` is reached, late RSVPs join a waitlist; promote automatically when a yes-RSVP withdraws (schema field `status: "waitlist"` on RSVP, or a separate table)
+- [ ] Event comments / discussion thread — the `Message` model already has an `eventId` foreign key and the relation is in the schema; wire up a simple threaded comment feed on EventPage (separate from the removed event chat — no socket needed, just paginated REST)
+- [ ] Duplicate / copy event — button on EventPage (admin/creator only) that pre-fills CreateEventPage with all fields from the current event, letting the user adjust date and save as new
+- [ ] Event check-in QR code — generate a QR code linking to a one-click RSVP-yes endpoint; display it on EventPage for the creator; useful for in-person check-in via phone scan
+- [ ] `isLegendary` badge — the flag is in the schema and returned by the API but only shown as a crown icon; let admins toggle it on the event edit modal and surface legendary events highlighted on GroupPage
+
+### Channels & messaging
+- [ ] Long-press context menu on mobile — currently no way to pin/delete messages on touch devices; a long-press (300 ms) should show a bottom-sheet action menu (reply, pin, delete, copy text)
+- [ ] @mention notifications — parse `@username` in message content on send; resolve to a userId; emit an in-app notification to that user with a link to the message
+- [ ] Message search — `GET /groups/:groupId/channels/:channelId/messages?q=` full-text search (Postgres `ILIKE` or `to_tsvector`) with a search bar in the channel header
+- [ ] Channel message attachments — allow posting images directly in channel chat (reuse the existing upload pipeline; store with `channelId` instead of `eventId` on `MediaAsset` or a new `ChannelMedia` table)
+- [ ] Thread replies — reply to a specific message; collapse into a "3 replies" indicator; schema: add `parentMessageId` FK on `Message`
+
+### Groups & members
+- [ ] Member directory / search — a searchable list of all active members in a group with their avatar, name, username, and join date; accessible from GroupPage
+- [ ] Group stats page — for admins: total events, total RSVPs, most active members, storage used, top tags; all computable from existing data with no schema changes
+- [ ] Bulk member import — admin uploads a CSV of emails; sends invite emails to each; useful for migrating an existing group
+
+### Notifications & preferences
+- [ ] Customisable reminder timing — per-user setting for how far in advance `event_start` push/email fires (15 min / 1 hr / 1 day / none); stored as a new `UserNotificationPreference` row with `type = "event_start_offset"`
+- [ ] Digest emails — daily or weekly email summarising upcoming events the user is RSVP-yes on; scheduled via BullMQ repeatable job
+- [ ] In-app notification grouping — the NotificationsPage shows one row per event; group consecutive notifications of the same type for the same event (e.g. "5 people RSVPed to your event")
+
+### Media
+- [ ] Image captions — add an optional `caption` text field to `MediaAsset`; shown below photos in the event lightbox and media grid
+- [ ] Album / media page per event — a dedicated full-page view (`/events/:id/media`) with a masonry or grid layout, download-all button, and sorting by date/likes
+- [ ] Group media gallery — a `/groups/:groupId/gallery` page visible to all members (not just admins) showing all media across all events in a scrollable masonry grid; already have `GET /groups/:groupId/media` endpoint
+
+### UX / polish
+- [ ] Accent colour per user — already in todo; `User.theme` is a string so it can carry `"dark:indigo"` or similar; render as CSS custom property on the root element
+- [ ] Keyboard shortcut help modal — `?` key opens an overlay listing all keyboard shortcuts (arrow nav in lightbox, Escape, etc.)
+- [ ] Empty-state illustrations — replace plain text "No events yet" / "No media" placeholders with simple SVG spot illustrations
+- [ ] Offline queue for RSVPs — when the user RSVPs while offline, queue the action in `localStorage` and replay on reconnect (extends the existing `useIsOnline` hook)
+- [ ] Event page map embed — when `event.location` is set, show an embedded static map thumbnail (Google Maps Static API or OpenStreetMap tile) above the Google/Apple/Waze links

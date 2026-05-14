@@ -88,7 +88,7 @@ export default function UserProfilePage() {
   }
 
   const { user } = data
-  const joinedYear = new Date(user.createdAt).getFullYear()
+  const joinedLabel = new Date(user.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
   const handleMuteToggle = () => {
     if (isMuted) {
@@ -114,7 +114,7 @@ export default function UserProfilePage() {
           {user.username && (
             <p className="text-indigo-400 text-sm">@{user.username}</p>
           )}
-          <p className="text-gray-500 text-xs mt-1">Member since {joinedYear}</p>
+          <p className="text-gray-500 text-xs mt-1">Member since {joinedLabel}</p>
 
           {!isOwnProfile && (
             <button

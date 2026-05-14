@@ -20,20 +20,38 @@ const RESEND_COOLDOWN = 60
 export default function VerifyEmailPage() {
   const [searchParams] = useSearchParams()
   const userId = searchParams.get('userId') ?? ''
+  const magicToken = searchParams.get('token') ?? ''
 
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [magicLinkLoading, setMagicLinkLoading] = useState(!!magicToken)
   const [resendCooldown, setResendCooldown] = useState(0)
   const [resendMessage, setResendMessage] = useState('')
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const { login } = useAuthStore()
   const navigate = useNavigate()
 
-  // Redirect to register if no userId
+  // Redirect to register if no userId and no magic token
   useEffect(() => {
-    if (!userId) navigate('/register', { replace: true })
-  }, [userId, navigate])
+    if (!userId && !magicToken) navigate('/register', { replace: true })
+  }, [userId, magicToken, navigate])
+
+  // Auto-verify via magic link token
+  useEffect(() => {
+    if (!magicToken) return
+    apiFetch<VerifyResponse>('/auth/verify-email-link', {
+      method: 'POST',
+      body: JSON.stringify({ token: magicToken }),
+    }).then((data) => {
+      login(data.token, { ...data.user, avatarUrl: data.user.avatarUrl ?? undefined })
+      navigate('/groups', { replace: true })
+    }).catch((err) => {
+      setError(err instanceof Error ? err.message : 'Verification link is invalid or has expired')
+      setMagicLinkLoading(false)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -93,6 +111,16 @@ export default function VerifyEmailPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not resend code')
     }
+  }
+
+  if (magicLinkLoading) {
+    return (
+      <div className="flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-sm bg-gray-900 rounded-2xl shadow-xl p-8 text-center border border-gray-800">
+          <p className="text-gray-300 text-sm">Verifying your email...</p>
+        </div>
+      </div>
+    )
   }
 
   return (

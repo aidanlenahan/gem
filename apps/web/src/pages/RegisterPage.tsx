@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 
 type RegisterResponse = {
@@ -11,6 +11,9 @@ type RegisterResponse = {
 const PASSWORD_RULES = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/
 
 export default function RegisterPage() {
+  const [searchParams] = useSearchParams()
+  const inviteToken = searchParams.get('ref') ?? ''
+
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
@@ -46,13 +49,17 @@ export default function RegisterPage() {
 
     setLoading(true)
     try {
-      const body: Record<string, string> = {
+      const body: Record<string, string | boolean> = {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim(),
         password,
       }
-      if (betaCode.trim()) body.betaCode = betaCode.trim()
+      if (inviteToken) {
+        body.inviteToken = inviteToken
+      } else if (betaCode.trim()) {
+        body.betaCode = betaCode.trim()
+      }
 
       const data = await apiFetch<RegisterResponse>('/auth/register', {
         method: 'POST',
@@ -175,22 +182,31 @@ export default function RegisterPage() {
             )}
           </div>
 
-          {/* Beta code */}
-          <div>
-            <label className="block text-xs font-medium text-gray-400 mb-1">Invite Code</label>
-            <input
-              type="text"
-              value={betaCode}
-              onChange={(e) =>
-                setBetaCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12))
-              }
-              placeholder="12-character access code"
-              maxLength={12}
-              spellCheck={false}
-              autoComplete="off"
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono tracking-wider uppercase"
-            />
-          </div>
+          {/* Invite code / invite link */}
+          {inviteToken ? (
+            <div className="flex items-center gap-2 px-4 py-3 bg-emerald-950/50 border border-emerald-800 rounded-xl">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-sm text-emerald-300">Invite link applied</span>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1">Invite Code</label>
+              <input
+                type="text"
+                value={betaCode}
+                onChange={(e) =>
+                  setBetaCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12))
+                }
+                placeholder="12-character access code"
+                maxLength={12}
+                spellCheck={false}
+                autoComplete="off"
+                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono tracking-wider uppercase"
+              />
+            </div>
+          )}
 
           {error && <p className="text-red-400 text-sm">{error}</p>}
 

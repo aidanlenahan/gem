@@ -1,12 +1,19 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { apiFetch } from '../lib/api'
 
+export type MessageReaction = { userId: string; emoji: string }
+
 export type ChannelMessage = {
   id: string
   content: string
   createdAt: string
+  updatedAt?: string
   userId: string
+  pinned?: boolean
+  replyToId?: string | null
+  replyTo?: { id: string; content: string; user: { id: string; name: string } } | null
   user?: { id: string; name: string; email: string; avatarUrl?: string | null }
+  reactions?: MessageReaction[]
 }
 
 export type ChannelMessagesPage = {

@@ -46,14 +46,77 @@ Priority order: P1 = blocks any real user from using the app
     WhatsApp Business API (paid), Telegram bot (free), SMS via Twilio.
     Design decision needed before any implementation.
 
-[ ] Phase 7 manual device matrix
-    PENDING — iOS Safari, Android Chrome, desktop installability and push
-    UX validation. Needed before production launch but not blocking dev.
-    Also covers Phase 11 cross-browser installability and push UX validation.
-
 ========================================================
 Completed
 ========================================================
+
+=== Merged completed items from todo.txt (2026-05-07) ===
+
+[x] group channels — DONE 2026-05-06: General channel auto-created on group creation and
+    backfilled for all existing groups (migration 20260506120000_channel_tags_and_general).
+    Manual channel creation restricted to admins. Tags assignable to channels so any user
+    subscribed to a tag also receives notifications for that channel. ChannelPage, server.ts,
+    GroupPage sidebar.
+
+[x] Phase 7 manual device matrix — DONE: iOS Safari, Android Chrome, desktop installability,
+    push UX validation, and PWA install flows verified. Also covers Phase 11 cross-browser
+    installability and push UX validation.
+
+[x] add google maps API key into env for location autocomplete in event creation page
+    DONE: GOOGLE_MAPS_API_KEY wired into apps/api/.env and .env.example; used by the
+    Google Places autocomplete in CreateEventPage.
+
+[x] add google maps address/location autocompletion in event creation page
+    DONE: CreateEventPage location field uses Google Places Autocomplete to suggest and
+    resolve addresses. Separate from the map-link feature on the event detail page.
+
+[x] when click calendar button in events, switch to pop-up modal (not a new page)
+    [x] make calendar subscription link per-user; removed the regen link feature
+    [x] mini calendar settings section (per-user):
+        [x] select which tags are shown on the calendar feed
+        [x] OR filter to only RSVP Yes / Maybe events
+        [x] OR show all events
+        [x] settings stored per user, not per group or globally
+        [x] fix preferences to ACTUALLY update the live calendar feed (logic bug fixed)
+
+[x] add view controls on event page (grid, list, etc.)
+    DONE: EventPage now supports toggling between grid and list layouts for the attendee/media view.
+
+[x] 'Authorization token expired' error — more detailed message
+    DONE: Error now shows a human-readable explanation, instructions to log out and back in,
+    and an inline logout button beneath the message.
+
+[x] notifications pop-up modal: no scroll wheel
+    DONE: Modal now only renders as many notification rows as fit in the viewport without
+    triggering overflow; no scrollbar appears on the modal.
+
+=== Merged completed items from todo.md and todo.txt (2026-05-06) ===
+
+[x] update all email notifications to have accurate links
+[x] add changing member roles (demote/promote) to audit log in settings; add other things as well as export functionality
+[x] add enable push notifications pop up if notis are not enabled
+[x] get rid of event chat
+[x] fully implement notifications page
+    [x] put 'open in full screen' button in header of Notifications modal to open notifications in its own page
+    [x] 5 most recent notifications on the notification modal
+    [x] add in-app column for notifications in the notifications section of settings, all on by default when create account
+[x] add PWA install guide
+[x] add enable push notification reminder on PWA if notis not installed
+[x] refine notis for everything on noti list besides new event create
+[x] question mark glyph, works on desktop
+    [x] make sure works on PWA
+    [x] add tabs in modal: one for website, one for iOS PWA, and one for Android PWA
+        [x] iOS PWA instructions: go to settings > notifications > GEM > Allow notifications
+        [x] Android PWA instructions: open Chrome ⋮ > Settings > Site settings > Notifications > find GEM > Allow
+[x] on private events, mark event as private with a lock glyph; ensure private event checkbox works; private event does not notify everyone; inviting someone does not auto-make it private
+[x] make sure no one gets notified for anything tied to past events
+[x] on private events, display list of users who were invited
+[x] add get notified feature on event start for RSVP yes events
+[x] put X next to each invited user on 'invite users' modal for admins, owners, and event creator
+[x] account creation code invite link in developer panel; devs can decide when link expires or expire it on click
+    [x] add functionality for account creation via invite link page via ?ref= in URL
+[x] on user account pages, add the month along with the year joined
+[x] get magic link for account creation verification to work (via email) [untested — needs deploy verification]
 
 === Merged completed items from todo.md and todo.txt ===
 

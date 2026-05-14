@@ -24,16 +24,31 @@
   box-sizing: border-box;
 }
 
+html {
+  /* height set by JS (visualViewport lock in main.tsx) — fallback for non-iOS */
+  height: 100%;
+  overflow: hidden;
+  overflow-anchor: none;
+  /* Prevent rubber-band bounce and visual-viewport panning on non-scrollable surfaces */
+  overscroll-behavior: none;
+}
+
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+  overflow-anchor: none;
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0;
   width: 100%;
-  overflow-x: hidden;
   background: #030712;
 }
 
 #root {
   width: 100%;
-  min-height: 100svh;
 }
 
 h1,
@@ -121,7 +136,7 @@ pre {
   background: #f8f7f1;
 }
 
-[data-theme="light"] .flex.h-dvh {
+[data-theme="light"] #root {
   /* Layout wrapper — match body bg */
   background: #f8f7f1;
 }

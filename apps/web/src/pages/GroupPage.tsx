@@ -6,6 +6,7 @@ import {
   useGroup,
   useGroupMembers,
   useGroupChannels,
+  useGroupTags,
   useSubscribeGroupChannel,
   useUnsubscribeGroupChannel,
   useUpdateMemberRole,
@@ -14,7 +15,13 @@ import {
   useRegenerateInviteCode,
   useApproveMember,
   useDenyMember,
+  useCalendarPreferences,
+  useUpdateCalendarPreferences,
+  useCreateChannel,
+  useGroupPhotos,
 } from '../hooks/useGroups'
+import { MediaLightbox } from '../components/MediaLightbox'
+import type { LightboxMedia } from '../components/MediaLightbox'
 import { useEvents, useDeleteEvent } from '../hooks/useEvents'
 import EventCard from '../components/EventCard'
 import Avatar from '../components/Avatar'
@@ -25,7 +32,7 @@ import { useToast } from '../hooks/useToast'
 import { useIsOnline } from '../hooks/useIsOnline'
 import { useAuthStore } from '../stores/authStore'
 
-type Tab = 'events' | 'members' | 'channels'
+type Tab = 'events' | 'members' | 'channels' | 'media'
 
 type EventSummary = {
   id: string
@@ -59,7 +66,7 @@ function RoleGlyph({ role }: { role: 'owner' | 'admin' | 'member' }) {
   return null
 }
 
-function AdminEventCard({ event, canDelete }: { event: EventSummary; canDelete: boolean }) {
+function AdminEventCard({ event, canDelete, layout }: { event: EventSummary; canDelete: boolean; layout?: 'grid' | 'list' }) {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const toast = useToast()
   const deleteEvent = useDeleteEvent(event.id)
@@ -75,7 +82,7 @@ function AdminEventCard({ event, canDelete }: { event: EventSummary; canDelete: 
 
   return (
     <div className="relative">
-      <EventCard event={event} />
+      <EventCard event={event} layout={layout} />
       {canDelete && (
         <div className="absolute top-2 right-2 flex gap-1">
           {confirmDelete ? (
@@ -111,14 +118,23 @@ function AdminEventCard({ event, canDelete }: { event: EventSummary; canDelete: 
 export default function GroupPage() {
   const { groupId } = useParams<{ groupId: string }>()
   const [activeTab, setActiveTab] = useState<Tab>('events')
+  const [eventLayout, setEventLayout] = useState<'grid' | 'list'>(() => {
+    return (localStorage.getItem('gem:eventLayout') as 'grid' | 'list') ?? 'grid'
+  })
   const [confirmRemoveMember, setConfirmRemoveMember] = useState<string | null>(null)
   const [memberActionMenuUserId, setMemberActionMenuUserId] = useState<string | null>(null)
   const [showPastEvents, setShowPastEvents] = useState(false)
   const [eventSearch, setEventSearch] = useState('')
   const [showInviteCode, setShowInviteCode] = useState(false)
   const [copiedCode, setCopiedCode] = useState(false)
-  const [showCalendarSubscribe, setShowCalendarSubscribe] = useState(false)
+  const [showCalendarModal, setShowCalendarModal] = useState(false)
+  const [showCreateChannelModal, setShowCreateChannelModal] = useState(false)
+  const [mediaLightboxIndex, setMediaLightboxIndex] = useState<number | null>(null)
+  const [newChannelName, setNewChannelName] = useState('')
+  const [newChannelInviteOnly, setNewChannelInviteOnly] = useState(false)
   const [copiedFeedUrl, setCopiedFeedUrl] = useState(false)
+  const [calendarFilterMode, setCalendarFilterMode] = useState<'all' | 'rsvp' | 'tags'>('all')
+  const [calendarTagIds, setCalendarTagIds] = useState<string[]>([])
   const memberActionMenuRef = useRef<HTMLDivElement>(null)
   const toast = useToast()
   const isOnline = useIsOnline()
@@ -134,9 +150,11 @@ export default function GroupPage() {
   const { data: membersData } = useGroupMembers(groupId!)
   const { data: channelsData } = useGroupChannels(groupId!)
   const { data: eventsData, isLoading: eventsLoading } = useEvents(groupId!)
+  const { data: photosData, isLoading: photosLoading } = useGroupPhotos(groupId!)
   const { data: inviteCodeData, refetch: refetchInviteCode } = useGroupInviteCode(groupId!)
   const subscribeChannel = useSubscribeGroupChannel(groupId!)
   const unsubscribeChannel = useUnsubscribeGroupChannel(groupId!)
+  const createChannel = useCreateChannel(groupId!)
   const updateMemberRole = useUpdateMemberRole(groupId!)
   const removeMember = useRemoveMember(groupId!)
   const regenerateCode = useRegenerateInviteCode(groupId!)
@@ -163,23 +181,9 @@ export default function GroupPage() {
     onError: () => toast.error('Failed to unmute user'),
   })
 
-  // Calendar feed subscription
-  const { data: calendarTokenData, refetch: refetchCalendarToken } = useQuery({
-    queryKey: ['groups', groupId, 'calendar-token'],
-    queryFn: () => apiFetch<{ feedUrl: string | null }>(`/groups/${groupId}/calendar-token`),
-    enabled: !!groupId,
-  })
-  const generateFeedToken = useMutation({
-    mutationFn: () => apiFetch<{ feedUrl: string }>(`/groups/${groupId}/calendar-token`, { method: 'POST' }),
-    onSuccess: () => refetchCalendarToken(),
-    onError: () => toast.error('Failed to generate feed URL'),
-  })
-  const revokeFeedToken = useMutation({
-    mutationFn: () => apiFetch(`/groups/${groupId}/calendar-token`, { method: 'DELETE' }),
-    onSuccess: () => { refetchCalendarToken(); setShowCalendarSubscribe(false) },
-    onError: () => toast.error('Failed to revoke feed URL'),
-  })
-  const feedUrl = calendarTokenData?.feedUrl ?? null
+  // Per-user calendar preferences
+  const { data: calendarPrefs } = useCalendarPreferences(groupId!)
+  const updateCalendarPrefs = useUpdateCalendarPreferences(groupId!)
 
   // Determine current user's role in this group
   const myMembership = membersData?.members?.find((m) => m.userId === currentUser?.id)
@@ -188,6 +192,25 @@ export default function GroupPage() {
 
   const pendingMembers = membersData?.members?.filter((m) => m.status === 'pending') ?? []
   const activeMembers = membersData?.members?.filter((m) => m.status === 'active') ?? []
+
+  const { data: groupTagsData } = useGroupTags(groupId!)
+  const groupTags = groupTagsData?.tags ?? []
+
+  // Sync server prefs into local state when modal opens
+  const openCalendarModal = () => {
+    setCalendarFilterMode((calendarPrefs?.filterMode as 'all' | 'rsvp' | 'tags') ?? 'all')
+    setCalendarTagIds(calendarPrefs?.tagIds ?? [])
+    setShowCalendarModal(true)
+  }
+
+  const handleSaveCalendarPrefs = async () => {
+    try {
+      await updateCalendarPrefs.mutateAsync({ filterMode: calendarFilterMode, tagIds: calendarTagIds })
+      toast.success('Calendar settings saved')
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Failed to save calendar settings'))
+    }
+  }
 
   const handleChannelToggle = async (channelId: string, isSubscribed: boolean) => {
     try {
@@ -360,11 +383,41 @@ export default function GroupPage() {
     )
   }
 
+  const photoCount = photosData?.media?.length ?? 0
   const tabs: { key: Tab; label: string }[] = [
     { key: 'events', label: 'Events' },
     { key: 'members', label: `Members (${group._count?.memberships ?? 0})` },
     { key: 'channels', label: 'Channels' },
+    { key: 'media', label: photoCount > 0 ? `Photos (${photoCount})` : 'Photos' },
   ]
+
+  const lightboxMedia: LightboxMedia[] = (photosData?.media ?? []).map((m) => ({
+    id: m.id,
+    url: m.url,
+    filename: m.filename,
+    sizeBytes: m.sizeBytes,
+    mimeType: m.mimeType,
+    width: m.width,
+    height: m.height,
+    exifData: m.exifData,
+    createdAt: m.createdAt,
+    uploader: m.uploader,
+  }))
+
+  const handleCreateChannel = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const name = newChannelName.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+    if (!name) return
+    try {
+      await createChannel.mutateAsync({ name, isInviteOnly: newChannelInviteOnly })
+      toast.success(`#${name} created`)
+      setShowCreateChannelModal(false)
+      setNewChannelName('')
+      setNewChannelInviteOnly(false)
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Failed to create channel'))
+    }
+  }
 
   return (
     <div className="w-full min-w-0 px-4 py-6 sm:p-6 max-w-5xl mx-auto">
@@ -456,11 +509,43 @@ export default function GroupPage() {
               to={`/groups/${groupId}/events/new`}
               className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors whitespace-nowrap"
             >
-              + Create Event
+              +<span className="hidden sm:inline"> Create Event</span>
             </Link>
+            {/* View toggle */}
+            <div className="flex items-center rounded-xl border border-gray-700 overflow-hidden shrink-0">
+              <button
+                type="button"
+                onClick={() => { setEventLayout('grid'); localStorage.setItem('gem:eventLayout', 'grid') }}
+                title="Grid view"
+                aria-label="Grid view"
+                aria-pressed={eventLayout === 'grid'}
+                className={`h-9 w-9 flex items-center justify-center transition-colors ${eventLayout === 'grid' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'}`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                  <rect x="3" y="3" width="7" height="7" rx="1" />
+                  <rect x="14" y="3" width="7" height="7" rx="1" />
+                  <rect x="3" y="14" width="7" height="7" rx="1" />
+                  <rect x="14" y="14" width="7" height="7" rx="1" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setEventLayout('list'); localStorage.setItem('gem:eventLayout', 'list') }}
+                title="List view"
+                aria-label="List view"
+                aria-pressed={eventLayout === 'list'}
+                className={`h-9 w-9 flex items-center justify-center transition-colors ${eventLayout === 'list' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'}`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
+                </svg>
+              </button>
+            </div>
             <button
               type="button"
-              onClick={() => setShowCalendarSubscribe((s) => !s)}
+              onClick={() => openCalendarModal()}
               title="Subscribe to calendar"
               aria-label="Subscribe to calendar"
               className="h-9 w-9 flex items-center justify-center rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-200 transition-colors shrink-0"
@@ -473,74 +558,6 @@ export default function GroupPage() {
               </svg>
             </button>
           </div>
-          {showCalendarSubscribe && (
-            <div className="mb-4 bg-gray-900 border border-gray-700 rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-gray-200">Subscribe to Calendar</p>
-                <button type="button" onClick={() => setShowCalendarSubscribe(false)} className="text-gray-500 hover:text-gray-300 text-xs">✕</button>
-              </div>
-              <p className="text-xs text-gray-400">
-                Get the shared group feed URL for Apple Calendar, Google Calendar, Outlook, or any app that supports webcal/ICS feeds. Private events stay out of this shared feed. Any member can view the link; only admins can rotate it.
-              </p>
-              {feedUrl ? (
-                <>
-                  <div className="flex items-center gap-2">
-                    <input
-                      readOnly
-                      value={feedUrl}
-                      className="flex-1 min-w-0 text-xs bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-300 font-mono"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => { navigator.clipboard.writeText(feedUrl); setCopiedFeedUrl(true); setTimeout(() => setCopiedFeedUrl(false), 2000) }}
-                      className="shrink-0 px-3 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-medium transition-colors"
-                    >
-                      {copiedFeedUrl ? 'Copied!' : 'Copy'}
-                    </button>
-                  </div>
-                  <a
-                    href={feedUrl.replace(/^https?:/, 'webcal:')}
-                    className="inline-block text-xs text-indigo-400 hover:text-indigo-300 underline"
-                  >
-                    Open in calendar app
-                  </a>
-                  {isAdmin && (
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => generateFeedToken.mutate()}
-                        disabled={generateFeedToken.isPending}
-                        className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors disabled:opacity-50"
-                      >
-                        {generateFeedToken.isPending ? 'Rotating...' : 'Regenerate URL'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => revokeFeedToken.mutate()}
-                        disabled={revokeFeedToken.isPending}
-                        className="text-xs text-red-400 hover:text-red-300 transition-colors disabled:opacity-50"
-                      >
-                        Disable URL
-                      </button>
-                    </div>
-                  )}
-                </>
-              ) : (
-                isAdmin ? (
-                  <button
-                    type="button"
-                    onClick={() => generateFeedToken.mutate()}
-                    disabled={generateFeedToken.isPending}
-                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors disabled:opacity-50"
-                  >
-                    {generateFeedToken.isPending ? 'Generating…' : 'Generate feed URL'}
-                  </button>
-                ) : (
-                  <p className="text-xs text-gray-500">An admin needs to generate the shared calendar URL before it can be copied here.</p>
-                )
-              )}
-            </div>
-          )}
           {eventsLoading ? (
             <div className="flex justify-center py-8">
               <Spinner className="text-indigo-400" />
@@ -561,12 +578,13 @@ export default function GroupPage() {
           ) : (
             <>
               {upcomingEvents.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className={eventLayout === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 gap-4' : 'flex flex-col gap-1.5'}>
                   {upcomingEvents.map((event) => (
                     <AdminEventCard
                       key={event.id}
                       event={event}
                       canDelete={isAdmin}
+                      layout={eventLayout}
                     />
                   ))}
                 </div>
@@ -590,12 +608,13 @@ export default function GroupPage() {
                     Past Events ({pastEvents.length})
                   </button>
                   {showPastEvents && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 opacity-60">
+                    <div className={`opacity-60 ${eventLayout === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 gap-4' : 'flex flex-col gap-1.5'}`}>
                       {pastEvents.map((event) => (
                         <AdminEventCard
                           key={event.id}
                           event={event}
                           canDelete={isAdmin}
+                          layout={eventLayout}
                         />
                       ))}
                     </div>
@@ -876,8 +895,28 @@ export default function GroupPage() {
       {/* Channels Tab */}
       {activeTab === 'channels' && (
         <div className="space-y-2">
+          {isAdmin && (
+            <div className="flex justify-end pb-1">
+              <button
+                onClick={() => setShowCreateChannelModal(true)}
+                className="flex items-center gap-1.5 text-sm text-indigo-400 hover:text-indigo-300 transition-colors"
+              >
+                <span className="text-base leading-none">+</span> New channel
+              </button>
+            </div>
+          )}
           {!channelsData?.channels?.length ? (
-            <EmptyState title="No channels" description="Channels are for group discussions. Admins can create channels from the Channels page." />
+            <div className="flex flex-col items-center gap-3 py-12 text-center">
+              <EmptyState title="No channels" description={isAdmin ? 'Create the first channel for your group.' : 'Channels are for group discussions. Ask an admin to create one.'} />
+              {isAdmin && (
+                <button
+                  onClick={() => setShowCreateChannelModal(true)}
+                  className="mt-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors"
+                >
+                  Create channel
+                </button>
+              )}
+            </div>
           ) : (
             channelsData.channels.map((ch) => (
               <div
@@ -932,6 +971,214 @@ export default function GroupPage() {
               </Link>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Media Tab */}
+      {activeTab === 'media' && (
+        <div>
+          {photosLoading ? (
+            <div className="flex justify-center py-16"><Spinner /></div>
+          ) : !photosData?.media?.length ? (
+            <EmptyState
+              title="No photos yet"
+              description="Photos uploaded to events in this group will appear here."
+            />
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-1 sm:gap-1.5">
+              {photosData.media.map((photo, i) => (
+                <button
+                  key={photo.id}
+                  type="button"
+                  onClick={() => setMediaLightboxIndex(i)}
+                  className="group relative aspect-square overflow-hidden rounded-lg bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <img
+                    src={photo.url}
+                    alt={photo.filename}
+                    className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
+                    loading="lazy"
+                  />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors" />
+                  <div className="absolute bottom-0 inset-x-0 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <p className="text-white text-[10px] font-medium truncate leading-tight drop-shadow">
+                      {photo.event.title}
+                    </p>
+                    <p className="text-white/70 text-[10px] truncate leading-tight drop-shadow">
+                      {photo.uploader?.name ?? 'Unknown'}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          {mediaLightboxIndex !== null && lightboxMedia.length > 0 && (
+            <MediaLightbox
+              media={lightboxMedia}
+              initialIndex={mediaLightboxIndex}
+              onClose={() => setMediaLightboxIndex(null)}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Create Channel Modal */}
+      {showCreateChannelModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm p-6 border border-gray-700 space-y-4">
+            <h2 className="text-lg font-bold text-white">Create Channel</h2>
+            <form onSubmit={handleCreateChannel} className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Channel name</label>
+                <div className="flex items-center bg-gray-800 border border-gray-700 rounded-xl px-3 py-2">
+                  <span className="text-gray-500 mr-1">#</span>
+                  <input
+                    value={newChannelName}
+                    onChange={(e) => setNewChannelName(e.target.value.toLowerCase().replace(/\s/g, '-'))}
+                    placeholder="e.g. general, announcements"
+                    maxLength={32}
+                    className="flex-1 bg-transparent text-white placeholder-gray-500 focus:outline-none text-sm"
+                    autoFocus
+                  />
+                </div>
+              </div>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={newChannelInviteOnly}
+                  onChange={(e) => setNewChannelInviteOnly(e.target.checked)}
+                  className="w-4 h-4 rounded accent-indigo-500"
+                />
+                <span className="text-sm text-gray-300">Invite-only channel</span>
+              </label>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => { setShowCreateChannelModal(false); setNewChannelName('') }}
+                  className="px-4 py-2 rounded-xl text-sm text-gray-400 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!newChannelName.trim() || createChannel.isPending}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-sm font-medium transition-colors"
+                >
+                  {createChannel.isPending ? 'Creating…' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Calendar Settings Modal */}
+      {showCalendarModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-md p-6 border border-gray-700 space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white">Calendar Feed</h2>
+              <button type="button" onClick={() => setShowCalendarModal(false)} className="text-gray-500 hover:text-gray-300 text-sm">✕</button>
+            </div>
+
+            {/* Feed URL */}
+            {calendarPrefs?.feedUrl ? (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-400">Your personal feed URL — paste into Apple Calendar, Google Calendar, or Outlook.</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={calendarPrefs.feedUrl}
+                    className="flex-1 min-w-0 text-xs bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-300 font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(calendarPrefs.feedUrl)
+                      setCopiedFeedUrl(true)
+                      setTimeout(() => setCopiedFeedUrl(false), 2000)
+                    }}
+                    className="shrink-0 px-3 py-2 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-medium transition-colors"
+                  >
+                    {copiedFeedUrl ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+                <a
+                  href={calendarPrefs.feedUrl.replace(/^https?:/, 'webcal:')}
+                  className="inline-block text-xs text-indigo-400 hover:text-indigo-300 underline"
+                >
+                  Open in calendar app
+                </a>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">Loading your feed URL…</p>
+            )}
+
+            <hr className="border-gray-700" />
+
+            {/* Filter settings */}
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-gray-200">Which events appear in your feed?</p>
+              {(['all', 'rsvp', 'tags'] as const).map((mode) => (
+                <label key={mode} className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="calendarFilter"
+                    value={mode}
+                    checked={calendarFilterMode === mode}
+                    onChange={() => setCalendarFilterMode(mode)}
+                    className="mt-0.5 accent-indigo-500"
+                  />
+                  <span className="text-sm text-gray-300">
+                    {mode === 'all' && 'All events'}
+                    {mode === 'rsvp' && 'Only events I RSVPed Yes or Maybe to'}
+                    {mode === 'tags' && 'Only events with specific tags'}
+                  </span>
+                </label>
+              ))}
+
+              {calendarFilterMode === 'tags' && (
+                <div className="ml-6 space-y-2 pt-1">
+                  {groupTags.length === 0 ? (
+                    <p className="text-xs text-gray-500 italic">No tags in this group yet.</p>
+                  ) : groupTags.map((tag) => (
+                    <label key={tag.id} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={calendarTagIds.includes(tag.id)}
+                        onChange={(e) => setCalendarTagIds((prev) =>
+                          e.target.checked ? [...prev, tag.id] : prev.filter((id) => id !== tag.id)
+                        )}
+                        className="w-4 h-4 rounded accent-indigo-500"
+                      />
+                      {tag.color && (
+                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+                      )}
+                      <span className="text-sm text-gray-200">{tag.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowCalendarModal(false)}
+                className="px-4 py-2 rounded-xl text-sm text-gray-400 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveCalendarPrefs}
+                disabled={updateCalendarPrefs.isPending}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl text-sm font-medium transition-colors"
+              >
+                {updateCalendarPrefs.isPending ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -7,11 +7,13 @@ export default function MarketingLayout() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
+  const userMenuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { token, user, logout } = useAuthStore()
   const navigate = useNavigate()
 
   const navLinks = [
     { to: '/home', label: 'Home', end: true },
+    { to: '/changelog', label: "What's New", end: false },
     { to: '/help', label: 'Help', end: false },
     { to: '/contact', label: 'Contact', end: false },
   ]
@@ -39,6 +41,7 @@ export default function MarketingLayout() {
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
           {/* Logo */}
           <Link to="/home" className="flex items-center gap-2 shrink-0">
+            <img src="/favicon.png" alt="" className="w-6 h-6" />
             <span className="text-xl font-bold tracking-tight text-indigo-400">GEM</span>
           </Link>
 
@@ -78,8 +81,13 @@ export default function MarketingLayout() {
                 <div
                   ref={userMenuRef}
                   className="relative"
-                  onMouseEnter={() => setUserMenuOpen(true)}
-                  onMouseLeave={() => setUserMenuOpen(false)}
+                  onMouseEnter={() => {
+                    if (userMenuCloseTimer.current) clearTimeout(userMenuCloseTimer.current)
+                    setUserMenuOpen(true)
+                  }}
+                  onMouseLeave={() => {
+                    userMenuCloseTimer.current = setTimeout(() => setUserMenuOpen(false), 100)
+                  }}
                 >
                   <button
                     onClick={() => setUserMenuOpen((v) => !v)}
@@ -262,6 +270,7 @@ export default function MarketingLayout() {
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
           <span className="font-semibold text-indigo-400">GEM</span>
           <div className="flex gap-5">
+            <Link to="/changelog" className="hover:text-gray-300 transition-colors">What's New</Link>
             <Link to="/help" className="hover:text-gray-300 transition-colors">Help</Link>
             <Link to="/contact" className="hover:text-gray-300 transition-colors">Contact</Link>
             {!token && <Link to="/login" className="hover:text-gray-300 transition-colors">Log in</Link>}

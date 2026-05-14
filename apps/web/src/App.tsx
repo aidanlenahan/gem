@@ -1,8 +1,8 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { useAuthStore } from './stores/authStore'
-import { ApiError, apiFetch } from './lib/api'
+import { ApiError, apiFetch, getToken } from './lib/api'
 import { useThemeApplier } from './hooks/useTheme'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
@@ -19,6 +19,7 @@ import SettingsPage from './pages/SettingsPage'
 import ProfilePage from './pages/ProfilePage'
 import UserProfilePage from './pages/UserProfilePage'
 import NotificationSettingsPage from './pages/NotificationSettingsPage'
+import NotificationsPage from './pages/NotificationsPage'
 import ChannelPage from './pages/ChannelPage'
 import { Phase7DebugPage } from './pages/Phase7DebugPage'
 import { Phase9DiagnosticsPage } from './pages/Phase9DiagnosticsPage'
@@ -27,9 +28,17 @@ import MarketingLayout from './components/MarketingLayout'
 import LandingPage from './pages/LandingPage'
 import HelpPage from './pages/HelpPage'
 import ContactPage from './pages/ContactPage'
+import ChangelogPage from './pages/ChangelogPage'
 import NotFoundPage from './pages/NotFoundPage'
 
 const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 401 && getToken()) {
+        window.dispatchEvent(new CustomEvent('auth:expired'))
+      }
+    },
+  }),
   defaultOptions: {
     queries: {
       staleTime: 30_000,
@@ -141,9 +150,9 @@ export default function App() {
 
         if (!vapidPublicKey || canceled) return
 
-        const anyPushEnabled = prefs.preferences
-          .filter((pref) => pref.channel === 'push')
-          .some((pref) => pref.enabled)
+        // No push prefs saved yet → treat as all-enabled (matches server-side default)
+        const pushPrefs = prefs.preferences.filter((pref) => pref.channel === 'push')
+        const anyPushEnabled = pushPrefs.length === 0 || pushPrefs.some((pref) => pref.enabled)
 
         if (!anyPushEnabled) return
 
@@ -190,6 +199,7 @@ export default function App() {
           <Route path="home" element={<LandingPage />} />
           <Route path="help" element={<HelpPage />} />
           <Route path="contact" element={<ContactPage />} />
+          <Route path="changelog" element={<ChangelogPage />} />
           <Route path="login" element={<RedirectIfAuthed><LoginPage /></RedirectIfAuthed>} />
           <Route path="register" element={<RedirectIfAuthed><RegisterPage /></RedirectIfAuthed>} />
           <Route path="verify-email" element={<VerifyEmailPage />} />
@@ -214,6 +224,7 @@ export default function App() {
           <Route path="/events/:eventId" element={<EventPage />} />
           <Route path="/groups/:groupId/channels/:channelId" element={<ChannelPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/settings/notifications" element={<NotificationSettingsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/u/:username" element={<UserProfilePage />} />

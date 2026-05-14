@@ -1,6 +1,14 @@
 # Local scratch files
 tmp/
 
+# Runtime user uploads (server-generated, not source code)
+uploads/
+
+# Root-level design working files (not deployed assets)
+/favicon-og.png
+/favicon-og-ext.png
+/favicon.png
+
 # Dependencies
 node_modules/
 vendor/
@@ -43,3 +51,7 @@ Thumbs.db
 test-results/
 sec-todo.md
 sec-gen-todo.md
+
+calendar-todo.txt
+
+.claude/
