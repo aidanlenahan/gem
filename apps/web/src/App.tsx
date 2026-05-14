@@ -30,6 +30,7 @@ import HelpPage from './pages/HelpPage'
 import ContactPage from './pages/ContactPage'
 import UpdatesPage from './pages/UpdatesPage'
 import GroupStatsPage from './pages/GroupStatsPage'
+import GroupGalleryPage from './pages/GroupGalleryPage'
 import NotFoundPage from './pages/NotFoundPage'
 
 const queryClient = new QueryClient({
@@ -222,6 +223,7 @@ export default function App() {
           <Route path="/groups/:groupId" element={<GroupPage />} />
           <Route path="/groups/:groupId/manage" element={<GroupManagePage />} />
           <Route path="/groups/:groupId/stats" element={<GroupStatsPage />} />
+          <Route path="/groups/:groupId/gallery" element={<GroupGalleryPage />} />
           <Route path="/groups/:groupId/events/new" element={<CreateEventPage />} />
           <Route path="/events/:eventId" element={<EventPage />} />
           <Route path="/groups/:groupId/channels/:channelId" element={<ChannelPage />} />

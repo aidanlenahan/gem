@@ -8,6 +8,11 @@ All tasks — completed and pending. Completed entries from `tasks.txt` are incl
 - [ ] Step 15: Uptime Kuma rollout
 - [ ] Step 16: PBS backup integration + restore test
 ================
+- temporary channel chats? expire after one week? or add 'load more' button after so many messages once scrolled all the way up on mobile to prevent accidental scroll all the way up and improve channel loading time?
+
+
+
+=================
 ## Channel chat — implementation checklist
 
 ### Socket / connection
@@ -68,10 +73,9 @@ All tasks — completed and pending. Completed entries from `tasks.txt` are incl
 - [ ] pick and update favicon for all pages
 - [ ] login links security hardening?
 - [ ] add accent color setting per user
-- [ ] media upload
-    - [ ] fix media upload with storage limits per user
+- [x] media upload
+    - [x] fix media upload with storage limits per user
 - [ ] implement dev email (Mailpit or MailHog for local SMTP capture)
-- [ ] dev vs prod instance — decide on deployment strategy (separate .env.production, MinIO bucket, Redis)
 - [ ] recurring events (RRULE support, recurrenceRule on Event model)
 - [ ] fix sizing of event creation page on mobile
 - [x] on pages external of the app (so like /home, /contact, /help pages), top right hover dropdown hangs for 200ms when hover off
@@ -79,12 +83,12 @@ All tasks — completed and pending. Completed entries from `tasks.txt` are incl
 - [x] if make an invite only channel chat, have the user who created that auto-join the chat. as of now i have to manually join a channel i created myself to send messages.
 - [x] in channel chat, make 'invite only' badge into the lock glyph, same glyph as the private event glyph
 - [/] add reply to a message functionality in message actions
-- [ ] docs/release notes/help articles? patch notes? versions? github link?
+- [x] docs/release notes/help articles? patch notes? versions? github link?
 - [ ] specify which user sent message in notifications
 - [ ] make sure safe for git commit and push
 - [ ] text sizing/accessibility features
-- [ ] add verbose exif metadata to uploaded media
-- [ ] add media tab to group page sorted by date with same info on it in event page info button
+- [x] add verbose exif metadata to uploaded media
+- [x] add media tab to group page sorted by date with same info on it in event page info button
 
 ## Later
 - [ ] waitinglist to make account
@@ -105,7 +109,7 @@ All tasks — completed and pending. Completed entries from `tasks.txt` are incl
 
 ### Channels & messaging
 - [ ] Long-press context menu on mobile — currently no way to pin/delete messages on touch devices; a long-press (300 ms) should show a bottom-sheet action menu (reply, pin, delete, copy text)
-- [ ] @mention notifications — parse `@username` in message content on send; resolve to a userId; emit an in-app notification to that user with a link to the message
+- [x] @mention notifications — parse `@username` in message content on send; resolve to a userId; emit an in-app notification to that user with a link to the message
 - [ ] Message search — `GET /groups/:groupId/channels/:channelId/messages?q=` full-text search (Postgres `ILIKE` or `to_tsvector`) with a search bar in the channel header
 - [ ] Channel message attachments — allow posting images directly in channel chat (reuse the existing upload pipeline; store with `channelId` instead of `eventId` on `MediaAsset` or a new `ChannelMedia` table)
 - [ ] Thread replies — reply to a specific message; collapse into a "3 replies" indicator; schema: add `parentMessageId` FK on `Message`
@@ -121,13 +125,18 @@ All tasks — completed and pending. Completed entries from `tasks.txt` are incl
 - [ ] In-app notification grouping — the NotificationsPage shows one row per event; group consecutive notifications of the same type for the same event (e.g. "5 people RSVPed to your event")
 
 ### Media
-- [ ] Image captions — add an optional `caption` text field to `MediaAsset`; shown below photos in the event lightbox and media grid
-- [ ] Album / media page per event — a dedicated full-page view (`/events/:id/media`) with a masonry or grid layout, download-all button, and sorting by date/likes
-- [ ] Group media gallery — a `/groups/:groupId/gallery` page visible to all members (not just admins) showing all media across all events in a scrollable masonry grid; already have `GET /groups/:groupId/media` endpoint
+- [/] Image captions — add an optional `caption` text field to `MediaAsset`; shown below photos in the event lightbox and media grid
+- [/] Album / media page per event — a dedicated full-page view (`/events/:id/media`) with a masonry or grid layout, download-all button, and sorting by date/likes
+- [x] Group media gallery — a `/groups/:groupId/gallery` page visible to all members (not just admins) showing all media across all events in a scrollable masonry grid; already have `GET /groups/:groupId/media` endpoint
 
 ### UX / polish
-- [ ] Accent colour per user — already in todo; `User.theme` is a string so it can carry `"dark:indigo"` or similar; render as CSS custom property on the root element
+- [x] Accent colour per user — already in todo; `User.theme` is a string so it can carry `"dark:indigo"` or similar; render as CSS custom property on the root element
 - [ ] Keyboard shortcut help modal — `?` key opens an overlay listing all keyboard shortcuts (arrow nav in lightbox, Escape, etc.)
 - [ ] Empty-state illustrations — replace plain text "No events yet" / "No media" placeholders with simple SVG spot illustrations
 - [ ] Offline queue for RSVPs — when the user RSVPs while offline, queue the action in `localStorage` and replay on reconnect (extends the existing `useIsOnline` hook)
 - [ ] Event page map embed — when `event.location` is set, show an embedded static map thumbnail (Google Maps Static API or OpenStreetMap tile) above the Google/Apple/Waze links
+
+
+
+- intuitive usage help
+    - example: slide right on mobile on any chat to open up options

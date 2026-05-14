@@ -113,6 +113,8 @@ export default function EventPage() {
   const [uploadingMedia, setUploadingMedia] = useState(false)
   const [deletingMediaId, setDeletingMediaId] = useState<string | null>(null)
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
+  const [pendingUploadFile, setPendingUploadFile] = useState<File | null>(null)
+  const [pendingCaption, setPendingCaption] = useState('')
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [invitingUserId, setInvitingUserId] = useState<string | null>(null)
   const [removingInviteUserId, setRemovingInviteUserId] = useState<string | null>(null)
@@ -330,10 +332,9 @@ export default function EventPage() {
     URL.revokeObjectURL(url)
   }
 
-  const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMediaFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file || !eventId) return
-
+    if (!file) return
     const allowed = ['image/jpeg', 'image/png', 'image/webp']
     if (!allowed.includes(file.type)) {
       toast.error('Only JPG, PNG, or WebP images are allowed')
@@ -345,20 +346,33 @@ export default function EventPage() {
       if (mediaUploadRef.current) mediaUploadRef.current.value = ''
       return
     }
+    setPendingCaption('')
+    setPendingUploadFile(file)
+    if (mediaUploadRef.current) mediaUploadRef.current.value = ''
+  }
 
+  const handleConfirmUpload = async () => {
+    if (!pendingUploadFile || !eventId) return
     const formData = new FormData()
-    formData.append('file', file)
+    formData.append('file', pendingUploadFile)
+    if (pendingCaption.trim()) formData.append('caption', pendingCaption.trim().slice(0, 280))
     setUploadingMedia(true)
     try {
       await apiFetch(`/events/${eventId}/media`, { method: 'POST', body: formData })
       toast.success('Photo uploaded')
       refetchMedia()
+      setPendingUploadFile(null)
+      setPendingCaption('')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to upload photo')
     } finally {
       setUploadingMedia(false)
-      if (mediaUploadRef.current) mediaUploadRef.current.value = ''
     }
+  }
+
+  const handleSaveCaption = async (assetId: string, caption: string | null) => {
+    await apiFetch(`/media/${assetId}/caption`, { method: 'PATCH', body: JSON.stringify({ caption }) })
+    refetchMedia()
   }
 
   const handleDeleteMedia = async (assetId: string) => {
@@ -777,7 +791,7 @@ export default function EventPage() {
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
                 className="hidden"
-                onChange={handleMediaUpload}
+                onChange={handleMediaFileSelected}
               />
             </>
           )}
@@ -834,10 +848,55 @@ export default function EventPage() {
         {/* Lightbox */}
         {lightboxIndex !== null && mediaData?.media && (
           <MediaLightbox
-            media={mediaData.media}
+            media={mediaData.media as import('../components/MediaLightbox').LightboxMedia[]}
             initialIndex={lightboxIndex}
             onClose={() => setLightboxIndex(null)}
+            currentUserId={currentUser?.id}
+            isAdmin={isAdmin}
+            onSaveCaption={handleSaveCaption}
           />
+        )}
+
+        {/* Upload modal */}
+        {pendingUploadFile && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={() => setPendingUploadFile(null)}>
+            <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-base font-semibold text-white">Add Photo</h3>
+              <img
+                src={URL.createObjectURL(pendingUploadFile)}
+                alt="Preview"
+                className="w-full aspect-video object-cover rounded-lg bg-gray-800"
+              />
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Caption <span className="text-gray-600">(optional)</span></label>
+                <textarea
+                  value={pendingCaption}
+                  onChange={(e) => setPendingCaption(e.target.value.slice(0, 280))}
+                  placeholder="Describe this photo…"
+                  rows={2}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <p className="text-xs text-gray-600 mt-0.5 text-right">{pendingCaption.length}/280</p>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setPendingUploadFile(null)}
+                  className="px-4 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmUpload}
+                  disabled={uploadingMedia}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50"
+                >
+                  {uploadingMedia ? 'Uploading…' : 'Upload'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {mediaData?.mediaUpload?.enabled && (
