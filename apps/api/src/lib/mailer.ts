@@ -52,11 +52,34 @@ export async function sendTransactionalEmail(opts: SendEmailOptions): Promise<vo
     try {
       await transporter.sendMail({ from, ...opts });
     } catch (err) {
-      console.error("[mailer] SMTP send failed:", (err as Error).message);
+      console.error("[mailer] SMTP send failed", {
+        to: opts.to,
+        subject: opts.subject,
+        error: (err as Error).message,
+      });
     }
+  } else {
+    console.warn("[mailer] sendTransactionalEmail called but SMTP is not configured");
   }
 
   if (process.env.NODE_ENV !== "production") {
     console.info("[mailer:dev]", { to: opts.to, subject: opts.subject, text: opts.text });
+  }
+}
+
+/**
+ * Verify SMTP connectivity. Call once at startup; logs result but never throws.
+ */
+export async function verifyMailTransporter(): Promise<void> {
+  const transporter = getMailTransporter();
+  if (!transporter) {
+    console.info("[mailer] SMTP not configured — notification emails disabled");
+    return;
+  }
+  try {
+    await transporter.verify();
+    console.info("[mailer] SMTP connection verified OK");
+  } catch (err) {
+    console.error("[mailer] SMTP verify failed — emails will not be delivered:", (err as Error).message);
   }
 }

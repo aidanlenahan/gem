@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import PageToolbar from '../components/PageToolbar'
 import { useQuery } from '@tanstack/react-query'
@@ -11,7 +11,10 @@ import TagBadge from '../components/TagBadge'
 import Avatar from '../components/Avatar'
 import Spinner from '../components/Spinner'
 import DurationPicker from '../components/DurationPicker'
+import DateTimePicker from '../components/DateTimePicker'
 import { apiFetch, ApiError, getApiErrorMessage, getToken } from '../lib/api'
+import { MediaLightbox } from '../components/MediaLightbox'
+import type { LightboxMedia } from '../components/MediaLightbox'
 import { useIsOnline } from '../hooks/useIsOnline'
 
 function LockIcon({ className = 'w-4 h-4' }: { className?: string }) {
@@ -98,7 +101,7 @@ export default function EventPage() {
     refetch: refetchEvent,
   } = useEvent(eventId!)
   const { data: attendance } = useEventAttendance(eventId!)
-  const { data: mediaData } = useEventMedia(eventId!)
+  const { data: mediaData, refetch: refetchMedia } = useEventMedia(eventId!)
   const likeMedia = useLikeMedia(eventId!)
   const rsvp = useRsvp(eventId!)
   const rating = useEventRating(eventId!)
@@ -106,6 +109,10 @@ export default function EventPage() {
   const updateEvent = useUpdateEvent(eventId!)
 
   const isOnline = useIsOnline()
+  const mediaUploadRef = useRef<HTMLInputElement>(null)
+  const [uploadingMedia, setUploadingMedia] = useState(false)
+  const [deletingMediaId, setDeletingMediaId] = useState<string | null>(null)
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
   const [showInviteModal, setShowInviteModal] = useState(false)
   const [invitingUserId, setInvitingUserId] = useState<string | null>(null)
   const [removingInviteUserId, setRemovingInviteUserId] = useState<string | null>(null)
@@ -117,6 +124,47 @@ export default function EventPage() {
   const [editTagIds, setEditTagIds] = useState<string[]>([])
   const [editLocation, setEditLocation] = useState('')
   const [editMaxAttendees, setEditMaxAttendees] = useState('')
+  const editLocationInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!showEditModal) return
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined
+    if (!apiKey) return
+
+    function initAutocomplete() {
+      const input = editLocationInputRef.current
+      if (!input) return
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const g = (window as any).google
+      if (!g?.maps?.places) return
+      const autocomplete = new g.maps.places.Autocomplete(input, { types: ['establishment', 'geocode'] })
+      autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace()
+        setEditLocation(place.formatted_address || place.name || '')
+      })
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((window as any).google?.maps?.places) {
+      initAutocomplete()
+      return
+    }
+
+    if (document.querySelector('script[data-gmaps]')) {
+      window.addEventListener('gmaps:ready', initAutocomplete, { once: true })
+      return
+    }
+
+    const script = document.createElement('script')
+    script.dataset.gmaps = '1'
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+    script.async = true
+    script.onload = () => {
+      window.dispatchEvent(new Event('gmaps:ready'))
+      initAutocomplete()
+    }
+    document.head.appendChild(script)
+  }, [showEditModal])
   const [editIsPrivate, setEditIsPrivate] = useState(false)
 
   const event = eventResponse?.event
@@ -282,6 +330,49 @@ export default function EventPage() {
     URL.revokeObjectURL(url)
   }
 
+  const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !eventId) return
+
+    const allowed = ['image/jpeg', 'image/png', 'image/webp']
+    if (!allowed.includes(file.type)) {
+      toast.error('Only JPG, PNG, or WebP images are allowed')
+      if (mediaUploadRef.current) mediaUploadRef.current.value = ''
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Photo must be under 5 MB')
+      if (mediaUploadRef.current) mediaUploadRef.current.value = ''
+      return
+    }
+
+    const formData = new FormData()
+    formData.append('file', file)
+    setUploadingMedia(true)
+    try {
+      await apiFetch(`/events/${eventId}/media`, { method: 'POST', body: formData })
+      toast.success('Photo uploaded')
+      refetchMedia()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to upload photo')
+    } finally {
+      setUploadingMedia(false)
+      if (mediaUploadRef.current) mediaUploadRef.current.value = ''
+    }
+  }
+
+  const handleDeleteMedia = async (assetId: string) => {
+    setDeletingMediaId(assetId)
+    try {
+      await apiFetch(`/media/${assetId}`, { method: 'DELETE' })
+      refetchMedia()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete photo')
+    } finally {
+      setDeletingMediaId(null)
+    }
+  }
+
   return (
     <div className="w-full min-w-0 px-4 py-6 sm:p-6 max-w-5xl mx-auto">
       {eventError && !isOnline && (
@@ -358,41 +449,22 @@ export default function EventPage() {
             LEGENDARY
           </span>
         )}
-        {canInvite && (
+        {event.isPrivate && (
           <button
             onClick={() => setShowInviteModal(true)}
             className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-700 hover:bg-indigo-600 text-white text-sm font-semibold transition-colors"
           >
-            <span>+</span> Invite Members
+            Invited Members
           </button>
         )}
       </div>
-
-      {/* Invited Users (private events) */}
-      {event.isPrivate && (
-        <section aria-label="Invited members" className="bg-gray-900 border border-gray-800 rounded-2xl p-4 mb-6">
-          <p className="text-sm font-semibold text-gray-300 mb-3">Invited</p>
-          {(eventInvitesData?.invites ?? []).length === 0 ? (
-            <p className="text-sm text-gray-500">No one has been invited yet.</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {(eventInvitesData?.invites ?? []).map((inv) => (
-                <div key={inv.id} className="flex items-center gap-1.5">
-                  <Avatar name={inv.invitedUser.name} avatarUrl={inv.invitedUser.avatarUrl} size="sm" />
-                  <span className="text-sm text-gray-300">{inv.invitedUser.name}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
 
       {/* Invite Members Modal */}
       {showInviteModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">Invite Members</h3>
+              <h3 className="text-lg font-semibold text-white">Invited Members</h3>
               <button
                 onClick={() => setShowInviteModal(false)}
                 className="text-gray-400 hover:text-white text-xl leading-none"
@@ -426,30 +498,32 @@ export default function EventPage() {
               </div>
             )}
 
-            {/* Invitable members */}
-            {invitableMembers.length === 0 ? (
-              <p className="text-sm text-gray-500">All group members have already been invited.</p>
-            ) : (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {invitableMembers.map((m) => (
-                  <div key={m.userId} className="flex items-center justify-between gap-3 py-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Avatar name={m.name} avatarUrl={m.avatarUrl} size="sm" />
-                      <div className="min-w-0">
-                        <p className="text-sm text-white truncate">{m.name}</p>
-                        {m.username && <p className="text-xs text-indigo-400">@{m.username}</p>}
+            {/* Invitable members — admin / creator only */}
+            {canInvite && (
+              invitableMembers.length === 0 ? (
+                <p className="text-sm text-gray-500">All group members have already been invited.</p>
+              ) : (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {invitableMembers.map((m) => (
+                    <div key={m.userId} className="flex items-center justify-between gap-3 py-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Avatar name={m.name} avatarUrl={m.avatarUrl} size="sm" />
+                        <div className="min-w-0">
+                          <p className="text-sm text-white truncate">{m.name}</p>
+                          {m.username && <p className="text-xs text-indigo-400">@{m.username}</p>}
+                        </div>
                       </div>
+                      <button
+                        onClick={() => handleInvite(m.userId)}
+                        disabled={invitingUserId === m.userId}
+                        className="shrink-0 px-3 py-1 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-semibold transition-colors disabled:opacity-50"
+                      >
+                        {invitingUserId === m.userId ? '...' : 'Invite'}
+                      </button>
                     </div>
-                    <button
-                      onClick={() => handleInvite(m.userId)}
-                      disabled={invitingUserId === m.userId}
-                      className="shrink-0 px-3 py-1 rounded-lg bg-indigo-700 hover:bg-indigo-600 text-white text-xs font-semibold transition-colors disabled:opacity-50"
-                    >
-                      {invitingUserId === m.userId ? '...' : 'Invite'}
-                    </button>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )
             )}
           </div>
         </div>
@@ -491,12 +565,10 @@ export default function EventPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">Start Date/Time *</label>
-                  <input
-                    type="datetime-local"
+                  <DateTimePicker
                     value={editDateTime}
-                    onChange={(e) => setEditDateTime(e.target.value)}
+                    onChange={setEditDateTime}
                     required
-                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
                 <div>
@@ -511,6 +583,7 @@ export default function EventPage() {
               <div>
                 <label className="block text-sm text-gray-400 mb-1">Location</label>
                 <input
+                  ref={editLocationInputRef}
                   value={editLocation}
                   onChange={(e) => setEditLocation(e.target.value)}
                   placeholder="e.g., Central Park"
@@ -687,48 +760,93 @@ export default function EventPage() {
 
       {/* Media Section */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
-        <h3 className="text-sm font-semibold text-gray-300 mb-3">Media</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-gray-300">Media</h3>
+          {mediaData?.mediaUpload?.canUpload && (
+            <>
+              <button
+                type="button"
+                onClick={() => mediaUploadRef.current?.click()}
+                disabled={uploadingMedia}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg transition-colors"
+              >
+                {uploadingMedia ? 'Uploading...' : '+ Add Photo'}
+              </button>
+              <input
+                ref={mediaUploadRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={handleMediaUpload}
+              />
+            </>
+          )}
+        </div>
+
+        {mediaData?.mediaUpload && !mediaData.mediaUpload.enabled && (
+          <p className="text-gray-600 text-xs mb-2">Media uploads are disabled for this group.</p>
+        )}
+
         {!mediaData?.media?.length ? (
           <p className="text-gray-500 text-sm">No media uploaded yet.</p>
         ) : (
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
-            {mediaData.media.map((m) => (
-              <div key={m.id} className="relative group">
-                <a
-                  href={m.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block aspect-square bg-gray-800 rounded-lg overflow-hidden"
-                >
-                  {m.mimeType.startsWith('image/') ? (
-                    <img
-                      src={m.url}
-                      alt={m.filename}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-xs text-gray-500">
-                      {m.filename}
-                    </div>
+            {mediaData.media.map((m, i) => {
+              const canDelete = m.uploaderId === currentUser?.id || isAdmin
+              return (
+                <div key={m.id} className="relative group">
+                  <button
+                    type="button"
+                    onClick={() => setLightboxIndex(i)}
+                    className="block w-full aspect-square bg-gray-800 rounded-lg overflow-hidden"
+                  >
+                    <img src={m.url} alt={m.filename} className="w-full h-full object-cover" />
+                  </button>
+                  {/* Like button */}
+                  <button
+                    onClick={() => likeMedia.mutate(m.id)}
+                    className={`absolute bottom-1 right-1 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs font-medium transition-colors ${
+                      m.likedByMe
+                        ? 'bg-red-600 text-white'
+                        : 'bg-gray-900/80 text-gray-300 hover:bg-red-700 hover:text-white'
+                    }`}
+                    aria-label={m.likedByMe ? 'Unlike' : 'Like'}
+                  >
+                    ♥ {m.likeCount > 0 && <span>{m.likeCount}</span>}
+                  </button>
+                  {/* Delete button (own upload or group admin) */}
+                  {canDelete && (
+                    <button
+                      onClick={() => handleDeleteMedia(m.id)}
+                      disabled={deletingMediaId === m.id}
+                      className="absolute top-1 right-1 hidden group-hover:flex items-center justify-center w-5 h-5 bg-red-600/80 hover:bg-red-600 text-white rounded-full text-xs disabled:opacity-50"
+                      aria-label="Delete photo"
+                    >
+                      {deletingMediaId === m.id ? '…' : '×'}
+                    </button>
                   )}
-                </a>
-                {/* Like button */}
-                <button
-                  onClick={() => likeMedia.mutate(m.id)}
-                  className={`absolute bottom-1 right-1 flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs font-medium transition-colors ${
-                    m.likedByMe
-                      ? 'bg-red-600 text-white'
-                      : 'bg-gray-900/80 text-gray-300 hover:bg-red-700 hover:text-white'
-                  }`}
-                  aria-label={m.likedByMe ? 'Unlike' : 'Like'}
-                >
-                  ♥ {m.likeCount > 0 && <span>{m.likeCount}</span>}
-                </button>
-              </div>
-            ))}
+                </div>
+              )
+            })}
           </div>
+        )}
+
+        {/* Lightbox */}
+        {lightboxIndex !== null && mediaData?.media && (
+          <MediaLightbox
+            media={mediaData.media}
+            initialIndex={lightboxIndex}
+            onClose={() => setLightboxIndex(null)}
+          />
+        )}
+
+        {mediaData?.mediaUpload?.enabled && (
+          <p className="text-xs text-gray-600 mt-2">
+            {Math.round(mediaData.mediaUpload.usedBytes / (1024 * 1024))} MB / {Math.round(mediaData.mediaUpload.limitBytes / (1024 * 1024))} MB used
+          </p>
         )}
       </div>
     </div>
   )
 }
+

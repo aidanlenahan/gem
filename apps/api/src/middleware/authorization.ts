@@ -58,9 +58,8 @@ export async function canAccessEvent(
   const isAdmin = ADMIN_ROLES.includes(membership.role as (typeof ADMIN_ROLES)[number]);
   const isCreator = event.createdById === userId;
   const hasInvite = event.invites.some((invite) => invite.userId === userId);
-  const isInviteOnly = event.invites.length > 0;
 
-  if (isInviteOnly && !isAdmin && !isCreator && !hasInvite) {
+  if (event.isPrivate && !isAdmin && !isCreator && !hasInvite) {
     throw new AppError(
       403,
       "This event is invite-only",
@@ -74,6 +73,5 @@ export async function canAccessEvent(
     isAdmin,
     isCreator,
     hasInvite,
-    isInviteOnly,
   };
 }

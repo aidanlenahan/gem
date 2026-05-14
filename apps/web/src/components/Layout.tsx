@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate, useMatch } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { useGroups } from '../hooks/useGroups'
 import type { GroupSummary } from '../hooks/useGroups'
+import { usePwaInstall } from '../hooks/usePwaInstall'
 import ToastContainer from './Toast'
 import Avatar from './Avatar'
 import NotificationBell from './NotificationBell'
@@ -18,6 +19,7 @@ export default function Layout() {
 
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
+  const isChannelPage = !!useMatch('/groups/:groupId/channels/:channelId')
   const { data: groups } = useGroups()
   const [isDesktop, setIsDesktop] = useState(getIsDesktop)
   const [sidebarOpen, setSidebarOpen] = useState(getIsDesktop)
@@ -28,9 +30,13 @@ export default function Layout() {
   const [showReconnected, setShowReconnected] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
+  const userMenuCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [pushNudgeDismissed, setPushNudgeDismissed] = useState(
     () => localStorage.getItem('pushNudgeDismissed') === '1',
   )
+  const pwaInstall = usePwaInstall()
+  const [showIosInstallModal, setShowIosInstallModal] = useState(false)
+  const [authExpired, setAuthExpired] = useState(false)
   const pushNotGranted =
     typeof Notification !== 'undefined' && Notification.permission !== 'granted'
   const showPushNudge = isPwa && pushNotGranted && !pushNudgeDismissed
@@ -39,6 +45,12 @@ export default function Layout() {
     localStorage.setItem('pushNudgeDismissed', '1')
     setPushNudgeDismissed(true)
   }
+
+  useEffect(() => {
+    const handler = () => setAuthExpired(true)
+    window.addEventListener('auth:expired', handler)
+    return () => window.removeEventListener('auth:expired', handler)
+  }, [])
 
   // Close user menu on outside click
   useEffect(() => {
@@ -104,9 +116,12 @@ export default function Layout() {
   const sidebarContent = (
     <>
       <div className="p-4 border-b border-gray-800 flex items-center justify-between">
-        <div>
-          <NavLink to="/groups" className="text-xl font-bold text-indigo-400 hover:text-indigo-300 transition-colors">GEM</NavLink>
-          <p className="text-xs text-gray-500 mt-1">{user?.name}</p>
+        <div className="flex items-center gap-3">
+          {isDesktop && <img src="/favicon.png" alt="" className="w-8 h-8 rounded-lg shrink-0" />}
+          <div>
+            <NavLink to="/groups" className="text-xl font-bold text-indigo-400 hover:text-indigo-300 transition-colors">GEM</NavLink>
+            <p className="text-xs text-gray-500 mt-1">Group Event Manager</p>
+          </div>
         </div>
         <div className="flex items-center gap-1">
           {isDesktop && <NotificationBell />}
@@ -141,6 +156,7 @@ export default function Layout() {
           <div className="mb-2 space-y-0.5">
             {[
               { to: '/home', label: 'Home', end: true },
+              { to: '/changelog', label: "What's New", end: false },
               { to: '/help', label: 'Help', end: false },
               { to: '/contact', label: 'Contact', end: false },
             ].map(({ to, label, end }) => (
@@ -198,32 +214,73 @@ export default function Layout() {
         <div
           ref={userMenuRef}
           className="relative"
-          onMouseEnter={() => isDesktop && setUserMenuOpen(true)}
-          onMouseLeave={() => isDesktop && setUserMenuOpen(false)}
+          onMouseEnter={() => {
+            if (!isDesktop) return
+            if (userMenuCloseTimer.current) clearTimeout(userMenuCloseTimer.current)
+            setUserMenuOpen(true)
+          }}
+          onMouseLeave={() => {
+            if (!isDesktop) return
+            userMenuCloseTimer.current = setTimeout(() => setUserMenuOpen(false), 200)
+          }}
         >
-          <button
-            onClick={() => setUserMenuOpen((prev) => !prev)}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-300 hover:bg-gray-800 transition-colors"
-          >
-            <Avatar
-              name={user?.name ?? ''}
-              avatarUrl={user?.avatarUrl}
-              size="sm"
-            />
-            <span className="truncate flex-1 text-left">
-              {user?.username ? `@${user.username}` : user?.name}
-            </span>
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className={`w-4 h-4 text-gray-500 shrink-0 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
+          {isDesktop ? (
+            <div className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-300 hover:bg-gray-800 transition-colors">
+              <NavLink
+                to="/profile"
+                onClick={() => setUserMenuOpen(false)}
+                className="shrink-0 rounded-full ring-2 ring-transparent hover:ring-indigo-500 transition-all"
+              >
+                <Avatar
+                  name={user?.name ?? ''}
+                  avatarUrl={user?.avatarUrl}
+                  size="sm"
+                />
+              </NavLink>
+              <button
+                onClick={() => setUserMenuOpen((prev) => !prev)}
+                className="flex items-center gap-2 flex-1 min-w-0"
+              >
+                <span className="truncate flex-1 text-left">
+                  {user?.username ? `@${user.username}` : user?.name}
+                </span>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className={`w-4 h-4 text-gray-500 shrink-0 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setUserMenuOpen((prev) => !prev)}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-300 hover:bg-gray-800 transition-colors"
             >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
+              <Avatar
+                name={user?.name ?? ''}
+                avatarUrl={user?.avatarUrl}
+                size="sm"
+              />
+              <span className="truncate flex-1 text-left">
+                {user?.username ? `@${user.username}` : user?.name}
+              </span>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className={`w-4 h-4 text-gray-500 shrink-0 transition-transform ${userMenuOpen ? 'rotate-180' : ''}`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+          )}
 
           {userMenuOpen && (
             <div className="absolute bottom-full left-0 right-0 mb-1 bg-gray-800 border border-gray-700 rounded-lg py-1 shadow-xl z-50">
@@ -266,7 +323,7 @@ export default function Layout() {
   )
 
   return (
-    <div className="flex h-dvh w-full overflow-x-hidden bg-gray-950 text-gray-100">
+    <div className="flex h-full w-full overflow-hidden bg-gray-950 text-gray-100">
       <ToastContainer />
 
       {/* Mobile overlay */}
@@ -290,8 +347,8 @@ export default function Layout() {
 
       {/* Main content */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-        {/* Global top banner — mobile only */}
-        {!isDesktop && (
+        {/* Global top banner — mobile only, hidden on channel pages (channel has its own header) */}
+        {!isDesktop && !isChannelPage && (
           <header className="flex items-center gap-3 px-4 py-3 bg-gray-900 border-b border-gray-800">
             <button
               onClick={() => setSidebarOpen(true)}
@@ -307,6 +364,21 @@ export default function Layout() {
           </header>
         )}
 
+        {authExpired && (
+          <div className="px-4 py-3 bg-red-950/80 border-b border-red-800 text-red-100 text-sm">
+            <p className="font-medium">Your session has expired.</p>
+            <p className="text-red-300 text-xs mt-0.5">Please log out and log back in to continue using the app.</p>
+            <button
+              onClick={handleLogout}
+              className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-800 hover:bg-red-700 text-white text-xs font-medium transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Log Out
+            </button>
+          </div>
+        )}
         {!isOnline && (
           <div className="px-4 py-2 bg-amber-900/60 border-b border-amber-700 text-amber-100 text-xs">
             Offline mode: actions may fail until your connection is restored.
@@ -336,7 +408,90 @@ export default function Layout() {
           </div>
         )}
 
-        <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
+        {/* PWA install nudge — shown on mobile browsers that haven't installed the app */}
+        {pwaInstall.showBanner && (
+          <div className="px-4 py-2 bg-gray-800/90 border-b border-gray-700 text-gray-100 text-xs flex items-center gap-2">
+            <img src="/favicon.png" alt="" className="w-5 h-5 shrink-0 rounded" />
+            <span className="flex-1">Add GEM to your home screen for the best experience.</span>
+            <button
+              onClick={() => {
+                if (pwaInstall.isIOS) setShowIosInstallModal(true)
+                else pwaInstall.install()
+              }}
+              className="shrink-0 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-colors"
+            >
+              Install
+            </button>
+            <button onClick={pwaInstall.dismiss} aria-label="Dismiss" className="p-1 text-gray-400 hover:text-white shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* iOS install instructions modal */}
+        {showIosInstallModal && (
+          <div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 pb-0"
+            onClick={() => setShowIosInstallModal(false)}
+          >
+            <div
+              className="w-full max-w-lg bg-gray-900 border border-gray-700 rounded-t-2xl p-6 pb-8"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-2">
+                  <img src="/favicon.png" alt="" className="w-8 h-8 rounded-xl" />
+                  <div>
+                    <p className="text-white font-semibold text-sm">Add GEM to Home Screen</p>
+                    <p className="text-gray-500 text-xs">gem.aidanlenahan.com</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowIosInstallModal(false)}
+                  className="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-gray-800 transition-colors"
+                  aria-label="Close"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <ol className="space-y-4">
+                <li className="flex items-start gap-3">
+                  <span className="shrink-0 w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center mt-0.5">1</span>
+                  <div>
+                    <p className="text-sm text-gray-200">Tap the <strong className="text-white">Share</strong> button in Safari's toolbar</p>
+                    <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-1 bg-gray-800 rounded-lg">
+                      {/* iOS share icon */}
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                      </svg>
+                      <span className="text-xs text-gray-300">Share</span>
+                    </div>
+                  </div>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="shrink-0 w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center mt-0.5">2</span>
+                  <p className="text-sm text-gray-200">Scroll down and tap <strong className="text-white">Add to Home Screen</strong></p>
+                </li>
+                <li className="flex items-start gap-3">
+                  <span className="shrink-0 w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center mt-0.5">3</span>
+                  <p className="text-sm text-gray-200">Tap <strong className="text-white">Add</strong> in the top-right corner</p>
+                </li>
+              </ol>
+              <button
+                onClick={() => { setShowIosInstallModal(false); pwaInstall.dismiss() }}
+                className="mt-6 w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        )}
+
+        <main className={`flex-1 min-w-0 min-h-0 overflow-x-hidden ${isChannelPage ? 'overflow-hidden' : 'overflow-y-auto'}`}>
           <Outlet />
         </main>
       </div>

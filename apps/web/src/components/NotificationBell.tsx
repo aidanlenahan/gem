@@ -73,7 +73,7 @@ export default function NotificationBell() {
 
       {/* Dropdown panel */}
       {open && (
-        <div className="absolute right-0 sm:right-auto sm:left-0 top-full mt-2 w-80 sm:w-96 bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl z-50 flex flex-col max-h-[70vh]">
+        <div className="absolute right-0 sm:right-auto sm:left-0 top-full mt-2 w-80 sm:w-96 bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl z-50 flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 shrink-0">
             <div className="flex items-center gap-2">
@@ -100,7 +100,7 @@ export default function NotificationBell() {
           </div>
 
           {/* Notification list */}
-          <div className="overflow-y-auto flex-1">
+          <div className="flex-1">
             {preview.length === 0 ? (
               <p className="px-4 py-8 text-center text-sm text-gray-500">No unread notifications</p>
             ) : (

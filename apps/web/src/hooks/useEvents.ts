@@ -29,16 +29,51 @@ type AttendanceResponse = {
     user: { id: string; name: string; avatarUrl?: string | null }
   }>
 }
+export type MediaAssetExif = {
+  DateTimeOriginal?: string
+  CreateDate?: string
+  Make?: string
+  Model?: string
+  LensModel?: string
+  FocalLength?: number
+  FNumber?: number
+  ExposureTime?: number
+  ISO?: number
+  ISOSpeedRatings?: number
+  Flash?: number
+  WhiteBalance?: number
+  GPSLatitude?: number
+  GPSLongitude?: number
+  GPSAltitude?: number
+  Software?: string
+  [key: string]: unknown
+}
+
+export type MediaAssetItem = {
+  id: string
+  url: string
+  filename: string
+  mimeType: string
+  sizeBytes: number
+  width: number | null
+  height: number | null
+  exifData: MediaAssetExif | null
+  likeCount: number
+  likedByMe: boolean
+  uploaderId: string | null
+  uploader: { id: string; name: string; avatarUrl: string | null } | null
+  createdAt: string
+}
+
 type EventMediaResponse = {
-  media: Array<{
-    id: string
-    url: string
-    filename: string
-    mimeType: string
-    sizeBytes: number
-    likeCount: number
-    likedByMe: boolean
-  }>
+  eventId: string
+  media: MediaAssetItem[]
+  mediaUpload: {
+    enabled: boolean
+    canUpload: boolean
+    usedBytes: number
+    limitBytes: number
+  }
 }
 type CreateEventInput = {
   groupId: string

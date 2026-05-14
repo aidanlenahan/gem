@@ -26,16 +26,22 @@ type GroupMembersResponse = {
 type GroupTagsResponse = {
   tags: Array<{ id: string; name: string; color?: string | null }>
 }
+export type ChannelTag = { id: string; name: string; color?: string | null }
+
+export type ChannelSummary = {
+  id: string
+  name: string
+  isGeneral?: boolean
+  isInviteOnly?: boolean
+  subscriberCount?: number
+  messageCount?: number
+  isSubscribed?: boolean
+  tags?: ChannelTag[]
+  unreadCount?: number
+}
+
 type GroupChannelsResponse = {
-  channels: Array<{
-    id: string
-    name: string
-    kind?: string
-    isInviteOnly?: boolean
-    subscriberCount?: number
-    messageCount?: number
-    isSubscribed?: boolean
-  }>
+  channels: ChannelSummary[]
 }
 
 export type GroupInviteResponse = {
@@ -272,5 +278,220 @@ export function useUpdateTag(groupId: string) {
         body: JSON.stringify({ name, color }),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['groups', groupId, 'tags'] }),
+  })
+}
+
+export type CalendarPreferences = {
+  filterMode: 'all' | 'rsvp' | 'tags'
+  tagIds: string[]
+  feedUrl: string
+}
+
+export function useCalendarPreferences(groupId: string) {
+  return useQuery({
+    queryKey: ['groups', groupId, 'calendar-preferences'],
+    queryFn: () => apiFetch<CalendarPreferences>(`/groups/${groupId}/calendar/preferences`),
+    enabled: !!groupId,
+  })
+}
+
+export function useUpdateCalendarPreferences(groupId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { filterMode: 'all' | 'rsvp' | 'tags'; tagIds?: string[] }) =>
+      apiFetch<CalendarPreferences>(`/groups/${groupId}/calendar/preferences`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    onSuccess: (data) => {
+      qc.setQueryData(['groups', groupId, 'calendar-preferences'], data)
+      qc.invalidateQueries({ queryKey: ['groups', groupId, 'calendar-preferences'] })
+    },
+  })
+}
+
+export function useUpdateChannelTags(groupId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ channelId, tagIds }: { channelId: string; tagIds: string[] }) =>
+      apiFetch(`/groups/${groupId}/channels/${channelId}/tags`, {
+        method: 'PUT',
+        body: JSON.stringify({ tagIds }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups', groupId, 'channels'] }),
+  })
+}
+
+export function useRenameChannel(groupId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ channelId, name }: { channelId: string; name: string }) =>
+      apiFetch(`/groups/${groupId}/channels/${channelId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups', groupId, 'channels'] }),
+  })
+}
+
+export function useDeleteChannel(groupId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (channelId: string) =>
+      apiFetch(`/groups/${groupId}/channels/${channelId}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups', groupId, 'channels'] }),
+  })
+}
+
+export function useMarkChannelRead(groupId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (channelId: string) =>
+      apiFetch(`/groups/${groupId}/channels/${channelId}/read`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups', groupId, 'channels'] }),
+  })
+}
+
+export function useDeleteMessage(groupId: string, channelId: string) {
+  return useMutation({
+    mutationFn: (messageId: string) =>
+      apiFetch(`/groups/${groupId}/channels/${channelId}/messages/${messageId}`, { method: 'DELETE' }),
+  })
+}
+
+export function useEditMessage(groupId: string, channelId: string) {
+  return useMutation({
+    mutationFn: ({ messageId, content }: { messageId: string; content: string }) =>
+      apiFetch(`/groups/${groupId}/channels/${channelId}/messages/${messageId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ content }),
+      }),
+  })
+}
+
+export function usePinMessage(groupId: string, channelId: string) {
+  return useMutation({
+    mutationFn: (messageId: string) =>
+      apiFetch(`/groups/${groupId}/channels/${channelId}/messages/${messageId}/pin`, { method: 'POST' }),
+  })
+}
+
+export function useToggleReaction(groupId: string, channelId: string) {
+  return useMutation({
+    mutationFn: ({ messageId, emoji }: { messageId: string; emoji: string }) =>
+      apiFetch(`/groups/${groupId}/channels/${channelId}/messages/${messageId}/react`, {
+        method: 'POST',
+        body: JSON.stringify({ emoji }),
+      }),
+  })
+}
+
+type ChannelSubscriber = { id: string; name: string; email: string; avatarUrl?: string | null }
+
+export function useChannelSubscribers(groupId: string, channelId: string | undefined) {
+  return useQuery({
+    queryKey: ['groups', groupId, 'channels', channelId, 'subscribers'],
+    queryFn: () =>
+      apiFetch<{ subscribers: ChannelSubscriber[] }>(
+        `/groups/${groupId}/channels/${channelId}/subscribers`,
+      ),
+    enabled: !!groupId && !!channelId,
+  })
+}
+
+export function useAddChannelSubscriber(groupId: string, channelId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (userId: string) =>
+      apiFetch(`/groups/${groupId}/channels/${channelId}/subscribers/${userId}`, { method: 'PUT' }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ['groups', groupId, 'channels', channelId, 'subscribers'] }),
+  })
+}
+
+export function useRemoveChannelSubscriber(groupId: string, channelId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (userId: string) =>
+      apiFetch(`/groups/${groupId}/channels/${channelId}/subscribers/${userId}`, { method: 'DELETE' }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ['groups', groupId, 'channels', channelId, 'subscribers'] }),
+  })
+}
+
+// ============================================================================
+// Group Media Hooks
+// ============================================================================
+
+export type GroupMediaAsset = {
+  id: string
+  url: string
+  filename: string
+  mimeType: string
+  sizeBytes: number
+  width: number | null
+  height: number | null
+  exifData: Record<string, unknown> | null
+  createdAt: string
+  uploaderId: string | null
+  uploader: { id: string; name: string; avatarUrl: string | null } | null
+  event: { id: string; title: string }
+}
+
+export type GroupMediaSettings = {
+  enabled: boolean
+  nonAdminEnabled: boolean
+  storageLimitBytes: number
+  usedBytes: number
+}
+
+export type GroupMediaResponse = {
+  media: GroupMediaAsset[]
+  settings: GroupMediaSettings
+}
+
+export function useGroupMedia(groupId: string) {
+  return useQuery({
+    queryKey: ['groups', groupId, 'media'],
+    queryFn: () => apiFetch<GroupMediaResponse>(`/groups/${groupId}/media`),
+    enabled: !!groupId,
+  })
+}
+
+export function useDeleteGroupMediaAsset(groupId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (assetId: string) =>
+      apiFetch(`/groups/${groupId}/media/${assetId}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups', groupId, 'media'] }),
+  })
+}
+
+export type GroupMediaSettingsUpdate = {
+  mediaUploadEnabled?: boolean
+  mediaStorageLimitBytes?: number
+  mediaUploadNonAdminEnabled?: boolean
+  unlockCode?: string
+}
+
+export function useUpdateGroupMediaSettings(groupId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: GroupMediaSettingsUpdate) =>
+      apiFetch<{ mediaUploadEnabled: boolean; mediaStorageLimitBytes: number; mediaUploadNonAdminEnabled: boolean }>(
+        `/groups/${groupId}/media-settings`,
+        { method: 'PATCH', body: JSON.stringify(body) },
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups', groupId, 'media'] }),
+  })
+}
+
+type GroupPhotosResponse = { media: GroupMediaAsset[] }
+
+export function useGroupPhotos(groupId: string) {
+  return useQuery({
+    queryKey: ['groups', groupId, 'photos'],
+    queryFn: () => apiFetch<GroupPhotosResponse>(`/groups/${groupId}/photos`),
+    enabled: !!groupId,
   })
 }

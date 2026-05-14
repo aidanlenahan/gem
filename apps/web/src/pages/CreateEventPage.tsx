@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import PageToolbar from '../components/PageToolbar'
 import { useCreateEvent } from '../hooks/useEvents'
 import { useGroupTags } from '../hooks/useGroups'
 import { useToast } from '../hooks/useToast'
 import DurationPicker from '../components/DurationPicker'
+import DateTimePicker from '../components/DateTimePicker'
 
 type CreateEventResult = { event: { id: string } }
 
@@ -25,7 +26,47 @@ export default function CreateEventPage() {
   const [maxAttendees, setMaxAttendees] = useState('')
   const [isPrivate, setIsPrivate] = useState(false)
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([])
+  const locationInputRef = useRef<HTMLInputElement>(null)
   const tags = tagsData?.tags ?? []
+
+  useEffect(() => {
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined
+    if (!apiKey) return
+
+    function initAutocomplete() {
+      const input = locationInputRef.current
+      if (!input) return
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const g = (window as any).google
+      if (!g?.maps?.places) return
+      const autocomplete = new g.maps.places.Autocomplete(input, { types: ['establishment', 'geocode'] })
+      autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace()
+        setLocation(place.formatted_address || place.name || '')
+      })
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((window as any).google?.maps?.places) {
+      initAutocomplete()
+      return
+    }
+
+    if (document.querySelector('script[data-gmaps]')) {
+      window.addEventListener('gmaps:ready', initAutocomplete, { once: true })
+      return
+    }
+
+    const script = document.createElement('script')
+    script.dataset.gmaps = '1'
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`
+    script.async = true
+    script.onload = () => {
+      window.dispatchEvent(new Event('gmaps:ready'))
+      initAutocomplete()
+    }
+    document.head.appendChild(script)
+  }, [])
 
   if (!groupId) {
     return <div className="p-6 text-gray-400">Missing group id</div>
@@ -95,12 +136,11 @@ export default function CreateEventPage() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm text-gray-400 mb-1">Start Date/Time *</label>
-            <input
-              type="datetime-local"
+            <DateTimePicker
               value={dateTime}
-              onChange={(e) => setDateTime(e.target.value)}
+              onChange={setDateTime}
               required
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              disabled={createEvent.isPending}
             />
           </div>
           <div>
@@ -116,6 +156,7 @@ export default function CreateEventPage() {
         <div>
           <label className="block text-sm text-gray-400 mb-1">Location</label>
           <input
+            ref={locationInputRef}
             value={location}
             onChange={(e) => setLocation(e.target.value)}
             placeholder="e.g., Central Park"

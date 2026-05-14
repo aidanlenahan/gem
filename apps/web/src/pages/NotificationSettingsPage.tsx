@@ -53,7 +53,7 @@ export default function NotificationSettingsPage() {
   const { data: groupsData } = useGroups()
   const [selectedGroupId, setSelectedGroupId] = useState<string>('')
   const { data: tagPrefsData } = useTagPreferences(selectedGroupId)
-  const { data: untaggedPrefData } = useUntaggedPreference(selectedGroupId)
+  useUntaggedPreference(selectedGroupId)
 
   const [pushPermission, setPushPermission] = useState<NotificationPermission | 'unsupported'>(
     typeof Notification !== 'undefined' ? Notification.permission : 'unsupported',
@@ -70,7 +70,7 @@ export default function NotificationSettingsPage() {
 
   const defaultTab = isPwa && isIOS ? 'ios' : isPwa && isAndroid ? 'android' : 'website'
   const [deniedModalTab, setDeniedModalTab] = useState<'website' | 'ios' | 'android'>(defaultTab)
-  const updateUntaggedPref = useUpdateUntaggedPreference()
+  useUpdateUntaggedPreference()
 
   useEffect(() => {
     if (typeof Notification !== 'undefined') {
