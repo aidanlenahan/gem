@@ -36,6 +36,7 @@ model User {
   channelReadStates          ChannelReadState[]
   userTagPrefs               UserTagPreference[]
   mediaAssets                MediaAsset[]
+  mediaAlbums                MediaAlbum[]
   notificationSubscriptions  NotificationSubscription[]
   notificationEvents         NotificationEvent[]
   reactions                  MessageReaction[]
@@ -77,6 +78,7 @@ model Group {
   tags                Tag[]
   auditLogs           AuditLog[]
   calendarPreferences UserCalendarPreference[]
+  mediaAlbums         MediaAlbum[]
 
   @@index([ownerId])
 }
@@ -338,25 +340,59 @@ model UserNotificationPreference {
 // ============================================================================
 
 model MediaAsset {
-  id        String   @id @default(cuid())
-  eventId   String
+  id         String   @id @default(cuid())
+  eventId    String
   uploaderId String
-  url       String
-  filename  String
-  sizeBytes Int
-  mimeType  String
-  width     Int?
-  height    Int?
-  exifData  Json?
-  createdAt DateTime @default(now())
+  url        String
+  filename   String
+  sizeBytes  Int
+  mimeType   String
+  width      Int?
+  height     Int?
+  exifData   Json?
+  caption    String?
+  createdAt  DateTime @default(now())
 
   // Relations
-  event     Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  uploader  User  @relation(fields: [uploaderId], references: [id], onDelete: SetNull, onUpdate: Cascade)
-  likes     MediaAssetLike[]
+  event          Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  uploader       User               @relation(fields: [uploaderId], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  likes          MediaAssetLike[]
+  albumAssets    MediaAlbumAsset[]
+  albumCoverOf   MediaAlbum[]       @relation("AlbumCover")
 
   @@index([eventId])
   @@index([uploaderId])
+}
+
+model MediaAlbum {
+  id           String   @id @default(cuid())
+  groupId      String
+  name         String
+  description  String?
+  createdById  String?
+  coverAssetId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  group      Group          @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdBy  User?          @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  coverAsset MediaAsset?    @relation("AlbumCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
+  assets     MediaAlbumAsset[]
+
+  @@index([groupId])
+}
+
+model MediaAlbumAsset {
+  albumId String
+  assetId String
+  addedAt DateTime @default(now())
+
+  album MediaAlbum @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  asset MediaAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@id([albumId, assetId])
+  @@index([albumId])
+  @@index([assetId])
 }
 
 model MediaAssetLike {

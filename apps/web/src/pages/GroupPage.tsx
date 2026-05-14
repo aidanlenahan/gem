@@ -19,7 +19,14 @@ import {
   useUpdateCalendarPreferences,
   useCreateChannel,
   useGroupPhotos,
+  useGroupAlbums,
+  useAlbumPhotos,
+  useCreateAlbum,
+  useDeleteAlbum,
+  useAddToAlbum,
+  useRemoveFromAlbum,
 } from '../hooks/useGroups'
+import type { MediaAlbum } from '../hooks/useGroups'
 import { MediaLightbox } from '../components/MediaLightbox'
 import type { LightboxMedia } from '../components/MediaLightbox'
 import { useEvents, useDeleteEvent } from '../hooks/useEvents'
@@ -130,6 +137,11 @@ export default function GroupPage() {
   const [showCalendarModal, setShowCalendarModal] = useState(false)
   const [showCreateChannelModal, setShowCreateChannelModal] = useState(false)
   const [mediaLightboxIndex, setMediaLightboxIndex] = useState<number | null>(null)
+  const [mediaSubTab, setMediaSubTab] = useState<'all' | 'albums'>('all')
+  const [selectedAlbum, setSelectedAlbum] = useState<MediaAlbum | null>(null)
+  const [showCreateAlbumModal, setShowCreateAlbumModal] = useState(false)
+  const [newAlbumName, setNewAlbumName] = useState('')
+  const [albumPickerPhotoId, setAlbumPickerPhotoId] = useState<string | null>(null)
   const [newChannelName, setNewChannelName] = useState('')
   const [newChannelInviteOnly, setNewChannelInviteOnly] = useState(false)
   const [copiedFeedUrl, setCopiedFeedUrl] = useState(false)
@@ -151,6 +163,12 @@ export default function GroupPage() {
   const { data: channelsData } = useGroupChannels(groupId!)
   const { data: eventsData, isLoading: eventsLoading } = useEvents(groupId!)
   const { data: photosData, isLoading: photosLoading } = useGroupPhotos(groupId!)
+  const { data: albumsData, isLoading: albumsLoading } = useGroupAlbums(groupId!)
+  const { data: albumPhotosData, isLoading: albumPhotosLoading } = useAlbumPhotos(groupId!, selectedAlbum?.id ?? null)
+  const createAlbum = useCreateAlbum(groupId!)
+  const deleteAlbum = useDeleteAlbum(groupId!)
+  const addToAlbum = useAddToAlbum(groupId!, selectedAlbum?.id ?? '')
+  const removeFromAlbum = useRemoveFromAlbum(groupId!, selectedAlbum?.id ?? '')
   const { data: inviteCodeData, refetch: refetchInviteCode } = useGroupInviteCode(groupId!)
   const subscribeChannel = useSubscribeGroupChannel(groupId!)
   const unsubscribeChannel = useUnsubscribeGroupChannel(groupId!)
@@ -392,17 +410,38 @@ export default function GroupPage() {
   ]
 
   const lightboxMedia: LightboxMedia[] = (photosData?.media ?? []).map((m) => ({
-    id: m.id,
-    url: m.url,
-    filename: m.filename,
-    sizeBytes: m.sizeBytes,
-    mimeType: m.mimeType,
-    width: m.width,
-    height: m.height,
-    exifData: m.exifData,
-    createdAt: m.createdAt,
-    uploader: m.uploader,
+    id: m.id, url: m.url, filename: m.filename, sizeBytes: m.sizeBytes,
+    mimeType: m.mimeType, width: m.width, height: m.height, exifData: m.exifData,
+    caption: m.caption ?? null, createdAt: m.createdAt, uploader: m.uploader,
   }))
+
+  const albumLightboxMedia: LightboxMedia[] = (albumPhotosData?.media ?? []).map((m) => ({
+    id: m.id, url: m.url, filename: m.filename, sizeBytes: m.sizeBytes,
+    mimeType: m.mimeType, width: m.width, height: m.height, exifData: m.exifData,
+    caption: m.caption ?? null, createdAt: m.createdAt, uploader: m.uploader,
+  }))
+
+  const groupQc = useQueryClient()
+
+  const handleSaveCaptionGroup = async (assetId: string, caption: string | null) => {
+    await apiFetch(`/media/${assetId}/caption`, { method: 'PATCH', body: JSON.stringify({ caption }) })
+    groupQc.invalidateQueries({ queryKey: ['groups', groupId, 'photos'] })
+    if (selectedAlbum) groupQc.invalidateQueries({ queryKey: ['groups', groupId, 'albums', selectedAlbum.id, 'photos'] })
+  }
+
+  const handleCreateAlbum = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const name = newAlbumName.trim()
+    if (!name) return
+    try {
+      await createAlbum.mutateAsync({ name })
+      setNewAlbumName('')
+      setShowCreateAlbumModal(false)
+      toast.success('Album created')
+    } catch {
+      toast.error('Failed to create album')
+    }
+  }
 
   const handleCreateChannel = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -977,48 +1016,232 @@ export default function GroupPage() {
       {/* Media Tab */}
       {activeTab === 'media' && (
         <div>
-          {photosLoading ? (
-            <div className="flex justify-center py-16"><Spinner /></div>
-          ) : !photosData?.media?.length ? (
-            <EmptyState
-              title="No photos yet"
-              description="Photos uploaded to events in this group will appear here."
-            />
-          ) : (
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-1 sm:gap-1.5">
-              {photosData.media.map((photo, i) => (
-                <button
-                  key={photo.id}
-                  type="button"
-                  onClick={() => setMediaLightboxIndex(i)}
-                  className="group relative aspect-square overflow-hidden rounded-lg bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <img
-                    src={photo.url}
-                    alt={photo.filename}
-                    className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105"
-                    loading="lazy"
-                  />
-                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors" />
-                  <div className="absolute bottom-0 inset-x-0 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <p className="text-white text-[10px] font-medium truncate leading-tight drop-shadow">
-                      {photo.event.title}
-                    </p>
-                    <p className="text-white/70 text-[10px] truncate leading-tight drop-shadow">
-                      {photo.uploader?.name ?? 'Unknown'}
-                    </p>
+          {/* Gallery link */}
+          <div className="flex justify-end mb-3">
+            <Link
+              to={`/groups/${groupId}/gallery`}
+              className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              View full gallery
+            </Link>
+          </div>
+
+          {/* All / Albums sub-tabs */}
+          <div className="flex items-center gap-1 mb-3">
+            {(['all', 'albums'] as const).map((sub) => (
+              <button
+                key={sub}
+                type="button"
+                onClick={() => { setMediaSubTab(sub); setSelectedAlbum(null); setMediaLightboxIndex(null) }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors capitalize ${
+                  mediaSubTab === sub
+                    ? 'bg-indigo-600 text-white'
+                    : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                }`}
+              >
+                {sub === 'all' ? 'All Photos' : 'Albums'}
+              </button>
+            ))}
+            {isAdmin && mediaSubTab === 'albums' && !selectedAlbum && (
+              <button
+                type="button"
+                onClick={() => setShowCreateAlbumModal(true)}
+                className="ml-auto flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white transition-colors"
+              >
+                + New Album
+              </button>
+            )}
+            {selectedAlbum && (
+              <button
+                type="button"
+                onClick={() => { setSelectedAlbum(null); setMediaLightboxIndex(null) }}
+                className="ml-auto flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-white transition-colors"
+              >
+                ← All Albums
+              </button>
+            )}
+          </div>
+
+          {/* All Photos grid */}
+          {mediaSubTab === 'all' && (
+            photosLoading ? (
+              <div className="flex justify-center py-16"><Spinner /></div>
+            ) : !photosData?.media?.length ? (
+              <EmptyState title="No photos yet" description="Photos uploaded to events in this group will appear here." />
+            ) : (
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-1 sm:gap-1.5">
+                {photosData.media.map((photo, i) => (
+                  <button
+                    key={photo.id}
+                    type="button"
+                    onClick={() => setMediaLightboxIndex(i)}
+                    className="group relative aspect-square overflow-hidden rounded-lg bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <img src={photo.url} alt={photo.filename} className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" loading="lazy" />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors" />
+                    <div className="absolute bottom-0 inset-x-0 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <p className="text-white text-[10px] font-medium truncate leading-tight drop-shadow">{photo.event.title}</p>
+                      <p className="text-white/70 text-[10px] truncate leading-tight drop-shadow">{photo.uploader?.name ?? 'Unknown'}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )
+          )}
+
+          {/* Albums grid */}
+          {mediaSubTab === 'albums' && !selectedAlbum && (
+            albumsLoading ? (
+              <div className="flex justify-center py-16"><Spinner /></div>
+            ) : !albumsData?.albums?.length ? (
+              <EmptyState
+                title="No albums yet"
+                description={isAdmin ? 'Create an album to organise group photos.' : 'Admins can create albums to organise group photos.'}
+              />
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {albumsData.albums.map((album) => (
+                  <div key={album.id} className="group relative">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAlbum(album)}
+                      className="w-full text-left"
+                    >
+                      <div className="aspect-square bg-gray-800 rounded-xl overflow-hidden mb-2">
+                        {album.coverAsset ? (
+                          <img src={album.coverAsset.url} alt={album.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-gray-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-sm font-medium text-gray-200 truncate">{album.name}</p>
+                      <p className="text-xs text-gray-500">{album.photoCount} photo{album.photoCount !== 1 ? 's' : ''}</p>
+                    </button>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); if (confirm(`Delete album "${album.name}"?`)) deleteAlbum.mutate(album.id) }}
+                        className="absolute top-2 right-2 hidden group-hover:flex items-center justify-center w-6 h-6 bg-red-600/80 hover:bg-red-600 text-white rounded-full text-xs"
+                        aria-label="Delete album"
+                      >
+                        ×
+                      </button>
+                    )}
                   </div>
-                </button>
-              ))}
+                ))}
+              </div>
+            )
+          )}
+
+          {/* Album detail — photos in selected album */}
+          {mediaSubTab === 'albums' && selectedAlbum && (
+            <div>
+              <div className="mb-3">
+                <p className="text-base font-semibold text-gray-100">{selectedAlbum.name}</p>
+                {selectedAlbum.description && <p className="text-sm text-gray-400 mt-0.5">{selectedAlbum.description}</p>}
+              </div>
+              {albumPhotosLoading ? (
+                <div className="flex justify-center py-16"><Spinner /></div>
+              ) : !albumPhotosData?.media?.length ? (
+                <div>
+                  <EmptyState title="No photos in this album" description={isAdmin ? 'Add photos from the All Photos tab.' : 'No photos have been added yet.'} />
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedAlbum(null); setMediaSubTab('all') }}
+                      className="mt-3 w-full py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors"
+                    >
+                      Go to All Photos
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-1 sm:gap-1.5">
+                  {albumPhotosData.media.map((photo, i) => (
+                    <div key={photo.id} className="group relative">
+                      <button
+                        type="button"
+                        onClick={() => setMediaLightboxIndex(i)}
+                        className="w-full aspect-square overflow-hidden rounded-lg bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <img src={photo.url} alt={photo.filename} className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" loading="lazy" />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors" />
+                      </button>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => removeFromAlbum.mutate(photo.id)}
+                          className="absolute top-1 right-1 hidden group-hover:flex items-center justify-center w-5 h-5 bg-red-600/80 hover:bg-red-600 text-white rounded-full text-xs"
+                          aria-label="Remove from album"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
-          {mediaLightboxIndex !== null && lightboxMedia.length > 0 && (
+
+          {/* Lightboxes */}
+          {mediaSubTab === 'all' && mediaLightboxIndex !== null && lightboxMedia.length > 0 && (
             <MediaLightbox
               media={lightboxMedia}
               initialIndex={mediaLightboxIndex}
               onClose={() => setMediaLightboxIndex(null)}
+              currentUserId={currentUser?.id}
+              isAdmin={isAdmin}
+              onSaveCaption={handleSaveCaptionGroup}
             />
           )}
+          {mediaSubTab === 'albums' && selectedAlbum && mediaLightboxIndex !== null && albumLightboxMedia.length > 0 && (
+            <MediaLightbox
+              media={albumLightboxMedia}
+              initialIndex={mediaLightboxIndex}
+              onClose={() => setMediaLightboxIndex(null)}
+              currentUserId={currentUser?.id}
+              isAdmin={isAdmin}
+              onSaveCaption={handleSaveCaptionGroup}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Create Album Modal */}
+      {showCreateAlbumModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setShowCreateAlbumModal(false)}>
+          <div className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm p-6 border border-gray-700 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-white">New Album</h2>
+            <form onSubmit={handleCreateAlbum} className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Album name</label>
+                <input
+                  type="text"
+                  value={newAlbumName}
+                  onChange={(e) => setNewAlbumName(e.target.value.slice(0, 80))}
+                  placeholder="e.g. Summer 2026"
+                  maxLength={80}
+                  required
+                  autoFocus
+                  className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-gray-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button type="button" onClick={() => setShowCreateAlbumModal(false)} className="px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-gray-800 transition-colors">Cancel</button>
+                <button type="submit" disabled={createAlbum.isPending} className="px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50">
+                  {createAlbum.isPending ? 'Creating…' : 'Create'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

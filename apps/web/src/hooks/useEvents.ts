@@ -58,6 +58,7 @@ export type MediaAssetItem = {
   width: number | null
   height: number | null
   exifData: MediaAssetExif | null
+  caption: string | null
   likeCount: number
   likedByMe: boolean
   uploaderId: string | null
