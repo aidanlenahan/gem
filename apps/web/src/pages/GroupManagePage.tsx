@@ -1332,7 +1332,14 @@ function GroupMediaSubPage({ groupId, isAdmin }: { groupId: string; isAdmin: boo
         </div>
 
         {media.length === 0 ? (
-          <p className="text-gray-500 text-sm">No media uploaded yet.</p>
+          <div className="flex flex-col items-center py-8 text-gray-600">
+            <svg className="w-10 h-10 mb-2" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="6" y="14" width="52" height="38" rx="5"/>
+              <circle cx="20" cy="27" r="5"/>
+              <polyline points="6,52 24,34 36,46 44,38 58,52"/>
+            </svg>
+            <p className="text-sm">No media uploaded yet.</p>
+          </div>
         ) : (
           <div className="divide-y divide-gray-800">
             {media.map((asset) => (

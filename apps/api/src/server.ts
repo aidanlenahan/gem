@@ -163,8 +163,10 @@ const notificationWorker = new Worker<NotificationFanoutJobData>(
       }
     }
 
-    // event_start: resolve recipients from yes-RSVPers rather than all group members
+    // event_start: resolve recipients from yes-RSVPers, filtered by their chosen reminder offset
     if (data.type === "event_start" && data.eventId) {
+      const firedOffset = data.reminderOffsetMinutes ?? 15;
+
       const yesRsvps = await prisma.rSVP.findMany({
         where: { eventId: data.eventId, status: "yes" },
         select: { userId: true },
@@ -178,28 +180,44 @@ const notificationWorker = new Worker<NotificationFanoutJobData>(
       });
 
       for (const user of users) {
+        const pushPref = await prisma.userNotificationPreference.findUnique({
+          where: { userId_type_channel: { userId: user.id, type: "event_start", channel: "push" } },
+        });
+        const emailPref = await prisma.userNotificationPreference.findUnique({
+          where: { userId_type_channel: { userId: user.id, type: "event_start", channel: "email" } },
+        });
+        const inAppPref = await prisma.userNotificationPreference.findUnique({
+          where: { userId_type_channel: { userId: user.id, type: "event_start", channel: "in_app" } },
+        });
+
+        // Default: enabled at 15 min for all channels
+        const pushEnabled = (pushPref ? pushPref.enabled : true) && (pushPref?.reminderOffsetMinutes ?? 15) === firedOffset;
+        const emailEnabled = (emailPref ? emailPref.enabled : true) && (emailPref?.reminderOffsetMinutes ?? 15) === firedOffset;
+        const inAppEnabled = (inAppPref ? inAppPref.enabled : true) && (inAppPref?.reminderOffsetMinutes ?? 15) === firedOffset;
+
+        if (!pushEnabled && !emailEnabled && !inAppEnabled) continue;
+
         try {
-          await prisma.notificationEvent.create({
-            data: {
-              type: data.type,
-              recipientId: user.id,
-              eventId: data.eventId,
-              title: data.title,
-              body: data.body,
-              url: data.url ?? null,
-              sentAt: new Date(),
-            },
-          });
+          if (inAppEnabled) {
+            await prisma.notificationEvent.create({
+              data: {
+                type: data.type,
+                recipientId: user.id,
+                eventId: data.eventId,
+                title: data.title,
+                body: data.body,
+                url: data.url ?? null,
+                sentAt: new Date(),
+              },
+            });
+          }
         } catch (error) {
           const message = (error as Error).message || "";
           if (message.includes("NotificationEvent_eventId_fkey")) continue;
           throw error;
         }
 
-        const pushPref = await prisma.userNotificationPreference.findUnique({
-          where: { userId_type_channel: { userId: user.id, type: "event_start", channel: "push" } },
-        });
-        if (pushPref ? pushPref.enabled : true) {
+        if (pushEnabled) {
           const subscription = await prisma.notificationSubscription.findUnique({ where: { userId: user.id } });
           if (subscription && isWebPushConfigured()) {
             try {
@@ -216,10 +234,7 @@ const notificationWorker = new Worker<NotificationFanoutJobData>(
           }
         }
 
-        const emailPref = await prisma.userNotificationPreference.findUnique({
-          where: { userId_type_channel: { userId: user.id, type: "event_start", channel: "email" } },
-        });
-        if ((emailPref ? emailPref.enabled : true) && isMailConfigured()) {
+        if (emailEnabled && isMailConfigured()) {
           const webBase = (process.env.WEB_BASE_URL || "").replace(/\/$/, "");
           const ctaUrl = data.eventId ? `${webBase}/events/${data.eventId}` : webBase || undefined;
           const email = buildNotificationEmail({ title: data.title, body: data.body, ctaUrl });
@@ -817,6 +832,7 @@ const notificationPreferencesBodySchema = z.array(
     type: z.enum(["chat_message", "event_created", "event_changed", "invite", "rsvp_update", "event_start", "mention"]),
     channel: z.enum(["push", "email", "in_app"]),
     enabled: z.boolean(),
+    reminderOffsetMinutes: z.number().int().positive().nullable().optional(),
   })
 );
 
@@ -839,6 +855,7 @@ type NotificationFanoutJobData = {
   title: string;
   body: string;
   url?: string; // deep-link path shown in the in-app notification inbox
+  reminderOffsetMinutes?: number; // event_start only: which reminder window fired
 };
 
 type CalendarSyncJobData = {
@@ -880,31 +897,48 @@ async function parseMentionedUsers(
   return users.filter((u): u is { id: string; username: string } => u.username !== null);
 }
 
+const REMINDER_OFFSETS_MINUTES = [15, 60, 1440] as const;
+
+const reminderBody = (offsetMinutes: number, title: string) => {
+  if (offsetMinutes === 1440) return `"${title}" is starting tomorrow`;
+  if (offsetMinutes === 60) return `"${title}" starts in 1 hour`;
+  return `"${title}" starts in 15 minutes`;
+};
+
 async function scheduleEventStartNotification(event: { id: string; groupId: string; title: string; dateTime: Date }) {
-  const jobId = `event-start-${event.id}`;
-  const delay = event.dateTime.getTime() - Date.now();
-  if (delay <= 0) return;
+  for (const offset of REMINDER_OFFSETS_MINUTES) {
+    const jobId = `event-start-${event.id}-${offset}m`;
+    const delay = event.dateTime.getTime() - Date.now() - offset * 60 * 1000;
 
-  const existing = await notificationQueue.getJob(jobId);
-  if (existing) await existing.remove();
+    const existing = await notificationQueue.getJob(jobId);
+    if (existing) await existing.remove();
 
-  await notificationQueue.add(
-    "fanout",
-    {
-      type: "event_start",
-      groupId: event.groupId,
-      eventId: event.id,
-      title: event.title,
-      body: "Your event is starting now!",
-      url: `/events/${event.id}`,
-    },
-    { jobId, delay }
-  );
+    if (delay <= 0) continue;
+
+    await notificationQueue.add(
+      "fanout",
+      {
+        type: "event_start",
+        groupId: event.groupId,
+        eventId: event.id,
+        title: event.title,
+        body: reminderBody(offset, event.title),
+        url: `/events/${event.id}`,
+        reminderOffsetMinutes: offset,
+      },
+      { jobId, delay }
+    );
+  }
 }
 
 async function cancelEventStartNotification(eventId: string) {
-  const existing = await notificationQueue.getJob(`event-start-${eventId}`);
-  if (existing) await existing.remove();
+  for (const offset of REMINDER_OFFSETS_MINUTES) {
+    const existing = await notificationQueue.getJob(`event-start-${eventId}-${offset}m`);
+    if (existing) await existing.remove();
+  }
+  // cancel legacy single-job format
+  const legacy = await notificationQueue.getJob(`event-start-${eventId}`);
+  if (legacy) await legacy.remove();
 }
 
 async function getCalendarSyncMeta(groupId: string) {
@@ -5642,6 +5676,7 @@ app.put("/notifications/preferences", { config: { rateLimit: { max: 60, timeWind
 
   const results = [];
   for (const pref of body) {
+    const reminderOffsetMinutes = pref.type === "event_start" ? (pref.reminderOffsetMinutes ?? null) : undefined;
     const result = await prisma.userNotificationPreference.upsert({
       where: {
         userId_type_channel: {
@@ -5650,12 +5685,13 @@ app.put("/notifications/preferences", { config: { rateLimit: { max: 60, timeWind
           channel: pref.channel,
         },
       },
-      update: { enabled: pref.enabled },
+      update: { enabled: pref.enabled, ...(pref.type === "event_start" ? { reminderOffsetMinutes } : {}) },
       create: {
         userId: currentUser.id,
         type: pref.type,
         channel: pref.channel,
         enabled: pref.enabled,
+        ...(pref.type === "event_start" ? { reminderOffsetMinutes } : {}),
       },
     });
     results.push(result);

@@ -16,6 +16,7 @@ import { apiFetch, ApiError, getApiErrorMessage, getToken } from '../lib/api'
 import { MediaLightbox } from '../components/MediaLightbox'
 import type { LightboxMedia } from '../components/MediaLightbox'
 import { useIsOnline } from '../hooks/useIsOnline'
+import EmptyState from '../components/EmptyState'
 
 function LockIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
@@ -857,7 +858,17 @@ export default function EventPage() {
         )}
 
         {!mediaData?.media?.length ? (
-          <p className="text-gray-500 text-sm">No media uploaded yet.</p>
+          <EmptyState
+            icon={
+              <svg className="w-14 h-14" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="6" y="14" width="52" height="38" rx="5"/>
+                <circle cx="20" cy="27" r="5"/>
+                <polyline points="6,52 24,34 36,46 44,38 58,52"/>
+              </svg>
+            }
+            title="No media yet"
+            description="Upload photos to capture this event."
+          />
         ) : (
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2">
             {mediaData.media.map((m, i) => {

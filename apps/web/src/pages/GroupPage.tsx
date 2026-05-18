@@ -608,6 +608,19 @@ export default function GroupPage() {
             </div>
           ) : !eventsData?.events?.length ? (
             <EmptyState
+              icon={
+                <svg className="w-16 h-16" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="8" y="12" width="48" height="44" rx="5"/>
+                  <line x1="8" y1="26" x2="56" y2="26"/>
+                  <line x1="20" y1="6" x2="20" y2="18"/>
+                  <line x1="44" y1="6" x2="44" y2="18"/>
+                  <circle cx="22" cy="37" r="2" fill="currentColor" stroke="none"/>
+                  <circle cx="32" cy="37" r="2" fill="currentColor" stroke="none"/>
+                  <circle cx="42" cy="37" r="2" fill="currentColor" stroke="none"/>
+                  <circle cx="22" cy="47" r="2" fill="currentColor" stroke="none"/>
+                  <circle cx="32" cy="47" r="2" fill="currentColor" stroke="none"/>
+                </svg>
+              }
               title="No events yet"
               description="Create the first event for this group."
               action={

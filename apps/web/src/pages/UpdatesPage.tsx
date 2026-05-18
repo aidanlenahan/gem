@@ -257,6 +257,60 @@ function ApiHealthButton() {
 }
 
 
+function ReleaseRow({ release, defaultOpen = false }: { release: Release; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen)
+
+  return (
+    <div className="relative pl-8">
+      {/* Timeline dot */}
+      <div className="absolute left-0 top-1.5 w-3.5 h-3.5 rounded-full bg-indigo-600 border-2 border-gray-950 shrink-0" aria-hidden="true" />
+
+      {/* Header row — clickable */}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full text-left"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-lg font-bold text-gray-100">v{release.version}</span>
+          {release.label && (
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-950/60 text-indigo-300 border border-indigo-800/60">
+              {release.label}
+            </span>
+          )}
+          <span className="text-sm text-gray-500 ml-auto">{release.date}</span>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className={`w-4 h-4 text-gray-600 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+        <p className="text-sm text-gray-400 mt-1">{release.summary}</p>
+      </button>
+
+      {/* Change list */}
+      {open && (
+        <ul className="mt-4 space-y-2">
+          {release.changes.map((change, i) => (
+            <li key={i} className="flex items-start gap-2.5 text-sm text-gray-300">
+              <span
+                className={`shrink-0 mt-0.5 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded border ${badgeStyles[change.type]}`}
+              >
+                {badgeLabel[change.type]}
+              </span>
+              <span className="leading-relaxed">{change.text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 export default function UpdatesPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16">
@@ -305,39 +359,9 @@ export default function UpdatesPage() {
           {/* Timeline line */}
           <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gray-800" aria-hidden="true" />
 
-          <div className="space-y-12">
-            {releases.map((release) => (
-              <div key={release.version} className="relative pl-8">
-                {/* Timeline dot */}
-                <div className="absolute left-0 top-1.5 w-3.5 h-3.5 rounded-full bg-indigo-600 border-2 border-gray-950 shrink-0" aria-hidden="true" />
-
-                {/* Header */}
-                <div className="flex flex-wrap items-center gap-2 mb-1">
-                  <span className="text-lg font-bold text-gray-100">v{release.version}</span>
-                  {release.label && (
-                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-950/60 text-indigo-300 border border-indigo-800/60">
-                      {release.label}
-                    </span>
-                  )}
-                  <span className="text-sm text-gray-500 ml-auto">{release.date}</span>
-                </div>
-
-                <p className="text-sm text-gray-400 mb-4">{release.summary}</p>
-
-                {/* Change list */}
-                <ul className="space-y-2">
-                  {release.changes.map((change, i) => (
-                    <li key={i} className="flex items-start gap-2.5 text-sm text-gray-300">
-                      <span
-                        className={`shrink-0 mt-0.5 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded border ${badgeStyles[change.type]}`}
-                      >
-                        {badgeLabel[change.type]}
-                      </span>
-                      <span className="leading-relaxed">{change.text}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+          <div className="space-y-8">
+            {releases.map((release, i) => (
+              <ReleaseRow key={release.version} release={release} defaultOpen={i === 0} />
             ))}
           </div>
         </div>
