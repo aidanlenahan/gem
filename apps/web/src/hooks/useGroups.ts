@@ -21,6 +21,7 @@ type GroupMembersResponse = {
     role: 'owner' | 'admin' | 'member'
     status: 'active' | 'pending'
     mutedUntil?: string | null
+    joinedAt?: string | null
   }>
 }
 type GroupTagsResponse = {
