@@ -35,7 +35,7 @@ export default function MarketingLayout() {
   }
 
   return (
-    <div className="h-full bg-gray-950 text-gray-100 flex flex-col overflow-hidden">
+    <div className="h-full overflow-y-auto bg-gray-950 text-gray-100 flex flex-col">
       {/* Navbar */}
       <header className="sticky top-0 z-50 bg-gray-950/80 backdrop-blur-md border-b border-gray-800/60">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
@@ -261,7 +261,7 @@ export default function MarketingLayout() {
       </header>
 
       {/* Page content */}
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1">
         <Outlet />
       </main>
 

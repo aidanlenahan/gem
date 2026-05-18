@@ -1,5 +1,7 @@
 # Local scratch files
 tmp/
+notes.md
+phases.md
 
 # Runtime user uploads (server-generated, not source code)
 uploads/
