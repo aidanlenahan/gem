@@ -1,27 +1,19 @@
 ========================================================
 TASKS.TXT — GEM Feature Backlog
-Last updated: 2026-05-14
+Last updated: 2026-05-18
 Format: [x] = done, [ ] = pending, [-] = in progress / partial
 
 Tasks are grouped by the release they target.
 Only [x] items that are fully done ship in that version's release notes.
 ========================================================
 
-=== v0.8 — In Progress ===
-Target: next cut after v0.7
-
-[ ] fix window sizing on desktop — inconsistent div sizing on desktop layout
-
-[ ] when keyboard is clicked on mobile channel: make header smaller and slide up slightly
-    toward the top screen border
+=== v0.8 — Done ===
+Released: 2026-05-18
 
 [x] @mention system — parse `@username` in message content on send; resolve to userId;
     emit in-app notification to that user with a link to the message. Frontend: `@`
     autocomplete dropdown with group member search, mention highlighting in rendered
     messages. Backend notification fanout was already wired. DONE 2026-05-14.
-
-[ ] Member directory / search — searchable list of all active members in a group with
-    avatar, name, username, and join date; accessible from GroupPage
 
 [x] Duplicate / copy event — button on EventPage (admin/creator only) that pre-fills
     CreateEventPage with all fields from the current event, letting the user adjust date
@@ -69,59 +61,116 @@ Target: next cut after v0.7
     channel name (32), photo caption (280). Enforced in Zod schemas (API) and maxLength
     attrs (frontend). DONE 2026-05-14.
 
-=== v0.9 — Planned ===
+=== v0.9 — Polish & Stability ===
+Target: tighten the core experience before semi-public release; no new major features,
+focus on reliability, UX rough edges, and prep for a small group of external users.
 
-[ ] Channel message attachments — post images directly in channel chat; reuse existing
-    upload pipeline; store with channelId instead of eventId on MediaAsset
+--- UX polish ---
 
-[ ] Thread replies — reply to a specific message; collapse into "3 replies" indicator;
-    schema: add parentMessageId FK on Message
+[ ] Fix window sizing on desktop — inconsistent div sizing on desktop layout causes layout
+    overflow in some page combinations; audit all page wrappers
 
-[ ] Bulk member import — admin uploads a CSV of emails; sends invite emails to each
+[ ] When keyboard opens on mobile channel view — shrink header and slide it toward the top
+    border so the message input doesn't get pushed off screen
 
-[ ] Customisable reminder timing — per-user setting for how far in advance event_start
-    push/email fires (15 min / 1 hr / 1 day / none); stored in UserNotificationPreference
-    with type = "event_start_offset"
+[ ] Member directory / search — searchable list of all active members in a group with
+    avatar, name, username, and join date; accessible from GroupPage Members tab
 
-[ ] Digest emails — daily or weekly email summarising upcoming events the user is
-    RSVP-yes on; scheduled via BullMQ repeatable job
-
-[ ] In-app notification grouping — group consecutive notifications of the same type for
-    the same event (e.g. "5 people RSVPed to your event")
-
-[ ] Image captions — optional caption text field on MediaAsset; shown below photos in
-    the lightbox and media grid
-
-[ ] Album / media page per event — dedicated full-page view (/events/:id/media) with
-    masonry or grid layout, download-all button, sorting by date
+[ ] Keyboard shortcut help modal — ? key opens an overlay listing all keyboard shortcuts
+    (lightbox arrow nav, Escape, submit, etc.)
 
 [ ] Offline queue for RSVPs — when user RSVPs while offline, queue action in localStorage
     and replay on reconnect (extends existing useIsOnline hook)
 
-[ ] Event page map embed — when event.location is set, show embedded static map thumbnail
-    (Google Maps Static API or OpenStreetMap tile) above the links
+--- Notifications & email ---
 
-[ ] Accent colour per user — User.theme is a string so it can carry "dark:indigo" or
-    similar; render as CSS custom property on the root element
+[ ] Digest emails — daily or weekly email summarising upcoming events the user is
+    RSVP-yes on; scheduled via BullMQ repeatable job; opt-in toggle in NotificationSettingsPage
 
-[ ] Keyboard shortcut help modal — ? key opens overlay listing all keyboard shortcuts
-    (lightbox arrow nav, Escape, etc.)
+[ ] In-app notification grouping — collapse consecutive notifications of the same type for
+    the same event (e.g. "5 people RSVPed to your event") into a single row
 
-[ ] Waitlist — when maxAttendees reached, late RSVPs join a waitlist; promote automatically
-    when a yes-RSVP withdraws (status: "waitlist" on RSVP)
+[ ] Specify sender in push/email notifications — include the acting user's display name
+    and avatar URL in fanout payload so notifications read "Alice RSVPed…" not just "New RSVP"
 
-[ ] Event comments / discussion thread — Message model already has an eventId FK and the
-    relation is in the schema; wire up a simple threaded comment feed on EventPage
-    (no socket needed, just paginated REST)
+--- Events ---
+
+[ ] Waitlist — when maxAttendees is reached, late RSVPs join a waitlist; promote
+    automatically when a yes-RSVP withdraws (add status: "waitlist" on RSVP model)
 
 [ ] Event check-in QR code — generate a QR code linking to a one-click RSVP-yes endpoint;
     display on EventPage for the creator; useful for in-person check-in via phone scan
 
-[ ] isLegendary badge — flag is in schema and returned by API but only shown as a crown
-    icon; let admins toggle it on the event edit modal and surface legendary events
-    highlighted on GroupPage
+[ ] isLegendary badge — flag is in schema and API but only shows a crown icon; let admins
+    toggle it on the event edit page; surface legendary events with a highlighted card on GroupPage
 
-[ ] dev vs prod instance — separate .env.production, separate DB, Redis, and storage bucket
+[ ] Event page map embed — when event.location is set, render an embedded static map
+    thumbnail (OpenStreetMap tile, no API key needed) above the directions link
+
+--- Infrastructure ---
+
+[ ] Dev vs prod environment split — separate .env.production with its own DB, Redis
+    instance, and storage bucket; document in notes.md
+
+[ ] Error monitoring — integrate a lightweight error tracker (e.g. Sentry free tier) for
+    both API (Fastify plugin) and web (ErrorBoundary + Sentry.captureException)
+
+[ ] Automated DB backups — nightly pg_dump cron job to a separate S3/R2 bucket;
+    retention 7 days; alert on failure
+
+=== v1.0 — Semi-Public Beta ===
+Target: controlled expansion beyond the core dev team to a handful of trusted external
+users (~2–5 people). Not publicly advertised. Goal: validate that the app works reliably
+for people who weren't involved in building it — real onboarding, real feedback.
+
+Audience: developers + 1–2 invited external users (friends/family) who get a beta invite code.
+
+--- Onboarding & first-run ---
+
+[ ] First-run onboarding flow — after registration, show a 3-step tour: create a group,
+    invite a friend, create your first event; dismissable; stored in User.onboardingDone
+
+[ ] Welcome email — send a formatted welcome email on account creation (uses existing
+    SMTP pipeline); includes link to Help page and contact address
+
+[ ] Better empty state on GroupsPage for brand-new users — prompt to create first group
+    with a clear CTA button when the user has no groups
+
+--- Reliability & quality gate ---
+
+[ ] End-to-end smoke test suite — Playwright tests covering: register → join group →
+    create event → RSVP → channel message → push notification; run before each release
+
+[ ] Load test baseline — confirm the API handles 50 concurrent users without degradation
+    on the current VPS (k6 or autocannon); document results in notes.md
+
+[ ] Graceful error pages — replace raw JSON error responses visible in the UI with
+    friendly error cards (already have 404; add 403, 500 variants)
+
+--- Invite & access control ---
+
+[ ] Invite-code dashboard — admin UI showing all issued beta codes (account + group
+    creation), who used them, and when; currently only code issuance exists in DevPanel
+
+[ ] Rate-limit invite code generation — max 10 active account codes at a time; prevent
+    accidental open registration
+
+[ ] Account deletion — GDPR-style self-serve delete in Settings; removes all personal data
+    (profile, messages anonymised, photos deleted from storage); 30-day soft delete before purge
+
+--- Polish ---
+
+[ ] Favicon and OG image audit — confirm og:image, og:title, og:description are set
+    correctly on all public pages (Landing, Help, Contact, Updates)
+
+[ ] Accessibility audit — run axe-core against all public pages and the main app shell;
+    fix any critical/serious violations before v1.0 tag
+
+[ ] PWA update prompt — when a new service worker is waiting, show a banner asking the
+    user to refresh; currently the update is silent and may confuse new users
+
+[ ] Legal / privacy basics — add a minimal Privacy Policy page at /privacy explaining
+    what data is stored (email, photos, messages) and how it is used; linked from footer
 
 === Later / Stretch ===
 
