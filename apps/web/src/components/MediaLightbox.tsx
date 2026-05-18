@@ -273,9 +273,18 @@ export function MediaLightbox({
           className="flex-shrink-0 flex items-center gap-2 px-5 py-2 bg-black/60"
           onClick={(e) => e.stopPropagation()}
         >
-          <p className="flex-1 text-sm text-gray-200 italic">
-            {current.caption || <span className="text-gray-500 not-italic">No caption</span>}
-          </p>
+          {canEditCaption ? (
+            <button
+              type="button"
+              onClick={() => { setCaptionDraft(current.caption ?? ''); setEditingCaption(true) }}
+              className="flex-1 text-left text-sm italic text-gray-200 hover:text-white transition-colors"
+              aria-label="Edit caption"
+            >
+              {current.caption || <span className="text-gray-500 not-italic">No caption</span>}
+            </button>
+          ) : (
+            <p className="flex-1 text-sm text-gray-200 italic">{current.caption}</p>
+          )}
           {canEditCaption && (
             <button
               type="button"

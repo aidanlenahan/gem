@@ -22,14 +22,21 @@ const releases: Release[] = [
     version: '0.8',
     date: 'May 2026',
     label: 'Beta',
-    summary: 'Photo captions, media albums, a full-page group gallery, light mode, and duplicate event.',
+    summary: '@mentions, admin photo delete, character limits, media albums, photo captions, a full-page group gallery, light mode, and duplicate event.',
     changes: [
+      { type: 'new', text: '@mentions in channel messages — type @ to open an autocomplete dropdown of group members; mentioned users get an in-app notification with a link to the message; mentions are highlighted in the chat' },
+      { type: 'new', text: 'Admin photo delete from the lightbox — group owners and admins get a trash icon in the lightbox toolbar; two-step inline confirm prevents accidental deletion; works in both All Photos and album views' },
       { type: 'new', text: 'Duplicate any event — a copy icon on every event page pre-fills the Create Event form with all fields (title, details, location, privacy, tags, duration) so you can pick a new date and save it as a fresh event; available to every group member' },
-      { type: 'new', text: 'Photo captions — add or edit a caption on any photo directly from the lightbox; visible to all members, editable by the uploader or a group admin' },
+      { type: 'new', text: 'Photo captions — add or edit a caption on any photo directly from the lightbox; click the caption text to edit; visible to all members, editable by the uploader or a group admin' },
       { type: 'new', text: 'Media Albums — group admins can create named albums, add photos to them, set a cover, and delete albums; members can browse albums from the Photos tab' },
       { type: 'new', text: 'Group Gallery page — a dedicated full-page view of every photo in the group with infinite scroll, caption editing, and the full lightbox; linked from the Photos tab' },
       { type: 'new', text: 'Light mode — toggle between dark and light in Settings; the choice is saved to your account and applied across all devices' },
       { type: 'new', text: 'Accent colour picker in Settings — choose your highlight colour (indigo, violet, rose, amber, emerald, sky); pairs with both dark and light mode' },
+      { type: 'new', text: 'How-to guides on the Help page — six illustrated accordion articles covering PWA installation, calendar subscription, photos, channels, roles, and push notifications' },
+      { type: 'improved', text: 'Character limits enforced on all major inputs — event title (100), event details (3000), location (200), group name (60), group description (500), channel message (2000), channel name (32), photo caption (280); counters show remaining characters' },
+      { type: 'improved', text: 'Route-level code splitting — every page is now lazy-loaded, cutting the initial JS bundle size and speeding up first load' },
+      { type: 'improved', text: 'Member count on the group page is now a button that jumps straight to the Members tab' },
+      { type: 'improved', text: 'PWA icon updated — Apple touch icon added and PNG icon registered in the manifest so the home-screen shortcut looks correct on all platforms' },
     ],
   },
   {
@@ -86,7 +93,6 @@ const releases: Release[] = [
       { type: 'improved', text: 'Auto-scroll only triggers when you are already at the bottom; a "Jump to bottom" button appears when you scroll up' },
       { type: 'improved', text: 'Consecutive messages from the same user are visually grouped (Discord-style), reducing clutter' },
       { type: 'improved', text: 'Mobile keyboard no longer disrupts scroll position or triggers unwanted page zoom in channel view' },
-      { type: 'improved', text: 'Mobile channel drawer — hamburger opens a full channel list slide-in panel without navigating away' },
       { type: 'fixed', text: 'Socket connection is now a shared singleton per session — no more duplicate connections on remount' },
       { type: 'fixed', text: 'Reconnect banner appears when the socket drops; live updates resume automatically on reconnect' },
       { type: 'fixed', text: 'Rate-limit errors from the server are now surfaced in the chat UI instead of silently failing' },
@@ -250,64 +256,92 @@ function ApiHealthButton() {
   )
 }
 
+
 export default function UpdatesPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16">
+      {/* Header */}
       <div className="mb-12 text-center">
         <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-gray-100">
           Updates
         </h1>
         <p className="mt-3 text-gray-400">
-          What's new in GEM.{' '}
+          GEM is a private social app for friend groups.{' '}
+          <a
+            href="https://github.com/aidanlenahan/gem"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-indigo-400 hover:text-indigo-300 transition-colors"
+          >
+            View source on GitHub.
+          </a>
+        </p>
+        <p className="mt-1 text-gray-500 text-sm">
           <Link to="/contact" className="text-indigo-400 hover:text-indigo-300 transition-colors">
             Have feedback?
           </Link>
+          {' '}We'd love to hear it.
         </p>
-        <div className="mt-4 flex justify-center">
+        <div className="mt-4 flex justify-center gap-2">
+          <a
+            href="https://status.aidanlenahan.com/status/gem"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700 border border-gray-700/60 text-gray-300 hover:text-gray-100 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            Status
+          </a>
           <ApiHealthButton />
         </div>
       </div>
 
-      <div className="relative">
-        {/* Timeline line */}
-        <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gray-800" aria-hidden="true" />
+      {/* Changelog */}
+      <section>
+        <h2 className="text-lg font-semibold text-gray-100 mb-6">What's new</h2>
+        <div className="relative">
+          {/* Timeline line */}
+          <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gray-800" aria-hidden="true" />
 
-        <div className="space-y-12">
-          {releases.map((release) => (
-            <div key={release.version} className="relative pl-8">
-              {/* Timeline dot */}
-              <div className="absolute left-0 top-1.5 w-3.5 h-3.5 rounded-full bg-indigo-600 border-2 border-gray-950 shrink-0" aria-hidden="true" />
+          <div className="space-y-12">
+            {releases.map((release) => (
+              <div key={release.version} className="relative pl-8">
+                {/* Timeline dot */}
+                <div className="absolute left-0 top-1.5 w-3.5 h-3.5 rounded-full bg-indigo-600 border-2 border-gray-950 shrink-0" aria-hidden="true" />
 
-              {/* Header */}
-              <div className="flex flex-wrap items-center gap-2 mb-1">
-                <span className="text-lg font-bold text-gray-100">v{release.version}</span>
-                {release.label && (
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-950/60 text-indigo-300 border border-indigo-800/60">
-                    {release.label}
-                  </span>
-                )}
-                <span className="text-sm text-gray-500 ml-auto">{release.date}</span>
-              </div>
-
-              <p className="text-sm text-gray-400 mb-4">{release.summary}</p>
-
-              {/* Change list */}
-              <ul className="space-y-2">
-                {release.changes.map((change, i) => (
-                  <li key={i} className="flex items-start gap-2.5 text-sm text-gray-300">
-                    <span
-                      className={`shrink-0 mt-0.5 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded border ${badgeStyles[change.type]}`}
-                    >
-                      {badgeLabel[change.type]}
+                {/* Header */}
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="text-lg font-bold text-gray-100">v{release.version}</span>
+                  {release.label && (
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-950/60 text-indigo-300 border border-indigo-800/60">
+                      {release.label}
                     </span>
-                    <span className="leading-relaxed">{change.text}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+                  )}
+                  <span className="text-sm text-gray-500 ml-auto">{release.date}</span>
+                </div>
+
+                <p className="text-sm text-gray-400 mb-4">{release.summary}</p>
+
+                {/* Change list */}
+                <ul className="space-y-2">
+                  {release.changes.map((change, i) => (
+                    <li key={i} className="flex items-start gap-2.5 text-sm text-gray-300">
+                      <span
+                        className={`shrink-0 mt-0.5 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded border ${badgeStyles[change.type]}`}
+                      >
+                        {badgeLabel[change.type]}
+                      </span>
+                      <span className="leading-relaxed">{change.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      </section>
     </div>
   )
 }

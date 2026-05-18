@@ -1,37 +1,38 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-query'
-import { useEffect } from 'react'
+import { useEffect, lazy, Suspense } from 'react'
 import { useAuthStore } from './stores/authStore'
 import { ApiError, apiFetch, getToken } from './lib/api'
 import { useThemeApplier } from './hooks/useTheme'
 import Layout from './components/Layout'
-import LoginPage from './pages/LoginPage'
-import RegisterPage from './pages/RegisterPage'
-import VerifyEmailPage from './pages/VerifyEmailPage'
-import ForgotPasswordPage from './pages/ForgotPasswordPage'
-import ResetPasswordPage from './pages/ResetPasswordPage'
-import GroupsPage from './pages/GroupsPage'
-import GroupPage from './pages/GroupPage'
-import GroupManagePage from './pages/GroupManagePage'
-import EventPage from './pages/EventPage'
-import CreateEventPage from './pages/CreateEventPage'
-import SettingsPage from './pages/SettingsPage'
-import ProfilePage from './pages/ProfilePage'
-import UserProfilePage from './pages/UserProfilePage'
-import NotificationSettingsPage from './pages/NotificationSettingsPage'
-import NotificationsPage from './pages/NotificationsPage'
-import ChannelPage from './pages/ChannelPage'
-import { Phase7DebugPage } from './pages/Phase7DebugPage'
-import { Phase9DiagnosticsPage } from './pages/Phase9DiagnosticsPage'
-import DeveloperPage from './pages/DeveloperPage'
 import MarketingLayout from './components/MarketingLayout'
-import LandingPage from './pages/LandingPage'
-import HelpPage from './pages/HelpPage'
-import ContactPage from './pages/ContactPage'
-import UpdatesPage from './pages/UpdatesPage'
-import GroupStatsPage from './pages/GroupStatsPage'
-import GroupGalleryPage from './pages/GroupGalleryPage'
-import NotFoundPage from './pages/NotFoundPage'
+
+const LoginPage = lazy(() => import('./pages/LoginPage'))
+const RegisterPage = lazy(() => import('./pages/RegisterPage'))
+const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage'))
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'))
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'))
+const GroupsPage = lazy(() => import('./pages/GroupsPage'))
+const GroupPage = lazy(() => import('./pages/GroupPage'))
+const GroupManagePage = lazy(() => import('./pages/GroupManagePage'))
+const EventPage = lazy(() => import('./pages/EventPage'))
+const CreateEventPage = lazy(() => import('./pages/CreateEventPage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const ProfilePage = lazy(() => import('./pages/ProfilePage'))
+const UserProfilePage = lazy(() => import('./pages/UserProfilePage'))
+const NotificationSettingsPage = lazy(() => import('./pages/NotificationSettingsPage'))
+const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
+const ChannelPage = lazy(() => import('./pages/ChannelPage'))
+const Phase7DebugPage = lazy(() => import('./pages/Phase7DebugPage').then(m => ({ default: m.Phase7DebugPage })))
+const Phase9DiagnosticsPage = lazy(() => import('./pages/Phase9DiagnosticsPage').then(m => ({ default: m.Phase9DiagnosticsPage })))
+const DeveloperPage = lazy(() => import('./pages/DeveloperPage'))
+const LandingPage = lazy(() => import('./pages/LandingPage'))
+const HelpPage = lazy(() => import('./pages/HelpPage'))
+const ContactPage = lazy(() => import('./pages/ContactPage'))
+const UpdatesPage = lazy(() => import('./pages/UpdatesPage'))
+const GroupStatsPage = lazy(() => import('./pages/GroupStatsPage'))
+const GroupGalleryPage = lazy(() => import('./pages/GroupGalleryPage'))
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 
 const queryClient = new QueryClient({
   queryCache: new QueryCache({
@@ -194,6 +195,7 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <Suspense fallback={<div className="h-full bg-gray-950" />}>
       <Routes>
         {/* Public routes — MarketingLayout wraps the public landing and auth pages */}
         <Route path="/" element={<MarketingLayout />}>
@@ -202,6 +204,7 @@ export default function App() {
           <Route path="help" element={<HelpPage />} />
           <Route path="contact" element={<ContactPage />} />
           <Route path="updates" element={<UpdatesPage />} />
+          <Route path="about" element={<Navigate to="/updates" replace />} />
           <Route path="login" element={<RedirectIfAuthed><LoginPage /></RedirectIfAuthed>} />
           <Route path="register" element={<RedirectIfAuthed><RegisterPage /></RedirectIfAuthed>} />
           <Route path="verify-email" element={<VerifyEmailPage />} />
@@ -236,6 +239,7 @@ export default function App() {
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      </Suspense>
     </QueryClientProvider>
   )
 }

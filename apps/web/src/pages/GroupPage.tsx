@@ -472,9 +472,12 @@ export default function GroupPage() {
         <div>
           <h2 className="text-2xl font-bold text-white">{group.name}</h2>
           {group.description && <p className="text-gray-400 mt-1">{group.description}</p>}
-          <p className="text-gray-500 text-sm mt-1">
+          <button
+            onClick={() => setActiveTab('members')}
+            className="text-gray-500 text-sm mt-1 hover:text-gray-300 transition-colors"
+          >
             {group._count?.memberships ?? 0} members
-          </p>
+          </button>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {isAdmin && (

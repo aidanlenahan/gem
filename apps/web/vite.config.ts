@@ -43,6 +43,12 @@ export default defineConfig({
         start_url: '/',
         icons: [
           {
+            src: '/favicon.png',
+            sizes: '500x500',
+            type: 'image/png',
+            purpose: 'any maskable',
+          },
+          {
             src: '/favicon.svg',
             sizes: 'any',
             type: 'image/svg+xml',
@@ -54,4 +60,18 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (id.includes('@sentry')) return 'vendor-sentry'
+          if (id.includes('socket.io')) return 'vendor-socket'
+          if (id.includes('@tanstack')) return 'vendor-query'
+          if (id.includes('react') || id.includes('react-dom') || id.includes('react-router') || id.includes('scheduler')) return 'vendor-react'
+          return 'vendor'
+        },
+      },
+    },
+  },
 })
