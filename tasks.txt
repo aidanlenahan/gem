@@ -10,10 +10,6 @@ Only [x] items that are fully done ship in that version's release notes.
 === v0.8 — In Progress ===
 Target: next cut after v0.7
 
-[ ] Long-press context menu on mobile — 300 ms long-press on a channel message shows a
-    bottom-sheet action menu (reply, pin, delete, copy text). No way to pin/delete on touch
-    currently.
-
 [ ] fix window sizing on desktop — inconsistent div sizing on desktop layout
 
 [ ] when keyboard is clicked on mobile channel: make header smaller and slide up slightly
@@ -24,9 +20,6 @@ Target: next cut after v0.7
     autocomplete dropdown with group member search, mention highlighting in rendered
     messages. Backend notification fanout was already wired. DONE 2026-05-14.
 
-[ ] Message search — GET /groups/:groupId/channels/:channelId/messages?q= full-text search
-    (Postgres ILIKE or to_tsvector) with a search bar in the channel header
-
 [ ] Member directory / search — searchable list of all active members in a group with
     avatar, name, username, and join date; accessible from GroupPage
 
@@ -34,20 +27,28 @@ Target: next cut after v0.7
     CreateEventPage with all fields from the current event, letting the user adjust date
     and save as new
 
-[ ] Event reminders — scheduleEventStartNotification is wired and queued but never called
+[x] Event reminders — scheduleEventStartNotification is wired and queued but never called
     on event create/update; hook it in so RSVP-yes members get a push/email N minutes
     before start (configurable per-user: 15 min, 1 hr, 1 day)
+    DONE 2026-05-18: scheduleEventStartNotification wired on event create/update; queues 3 BullMQ
+    jobs per event (15m/1hr/1day); worker filters by per-user offset pref; NotificationSettingsPage
+    has "Event Reminders" chip UI per channel; reminderOffsetMinutes field added to schema + migrated.
+    Files: server.ts, schema.prisma, migrations/20260518*, useNotifications.ts, NotificationSettingsPage.tsx
 
-[ ] Empty-state illustrations — replace plain text "No events yet" / "No media" placeholders
+[x] Empty-state illustrations — replace plain text "No events yet" / "No media" placeholders
     with simple SVG spot illustrations
+    DONE 2026-05-18: Added inline SVG spot illustrations to all 5 empty states: calendar icon for
+    "No events yet" (GroupPage), landscape photo icon for "No photos yet" (GroupGalleryPage),
+    "No media yet" (EventPage, GroupManagePage admin), and people icon for "No groups yet"
+    (GroupsPage). EventPage gained EmptyState import. Files: GroupPage.tsx, GroupGalleryPage.tsx,
+    EventPage.tsx, GroupManagePage.tsx, GroupsPage.tsx
 
-[ ] pick and update favicon for all pages (browser tab, PWA icon, OG image)
+[x] pick and update favicon for all pages (browser tab, PWA icon, OG image)
 
 [x] fix media upload with storage limits per user (per-user quota enforcement)
 
-[ ] fix sizing of event creation page on mobile
+[x] fix sizing of event creation page on mobile
 
-[ ] implement dev email (Mailpit or MailHog for local SMTP capture)
 
 [x] Group stats page — GET /groups/:groupId/stats, GroupStatsPage.tsx, linked from
     GroupManagePage. Shows total events, RSVPs, messages, photos, storage, top members,

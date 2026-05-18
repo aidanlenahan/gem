@@ -11,6 +11,7 @@ type NotificationPreference = {
   type: string
   channel: string
   enabled: boolean
+  reminderOffsetMinutes?: number | null
 }
 
 type NotificationPreferencesResponse = {
@@ -39,7 +40,7 @@ export function useNotificationPreferences() {
 export function useUpdateNotificationPreferences() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (prefs: Array<{ type: string; channel: string; enabled: boolean }>) =>
+    mutationFn: (prefs: Array<{ type: string; channel: string; enabled: boolean; reminderOffsetMinutes?: number | null }>) =>
       apiFetch('/notifications/preferences', {
         method: 'PUT',
         body: JSON.stringify(prefs),

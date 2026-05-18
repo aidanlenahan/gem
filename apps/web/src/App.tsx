@@ -28,6 +28,7 @@ const Phase9DiagnosticsPage = lazy(() => import('./pages/Phase9DiagnosticsPage')
 const DeveloperPage = lazy(() => import('./pages/DeveloperPage'))
 const LandingPage = lazy(() => import('./pages/LandingPage'))
 const HelpPage = lazy(() => import('./pages/HelpPage'))
+const HelpArticlePage = lazy(() => import('./pages/HelpArticlePage'))
 const ContactPage = lazy(() => import('./pages/ContactPage'))
 const UpdatesPage = lazy(() => import('./pages/UpdatesPage'))
 const GroupStatsPage = lazy(() => import('./pages/GroupStatsPage'))
@@ -202,6 +203,7 @@ export default function App() {
           <Route index element={<RootRedirect />} />
           <Route path="home" element={<LandingPage />} />
           <Route path="help" element={<HelpPage />} />
+          <Route path="help/:slug" element={<HelpArticlePage />} />
           <Route path="contact" element={<ContactPage />} />
           <Route path="updates" element={<UpdatesPage />} />
           <Route path="about" element={<Navigate to="/updates" replace />} />

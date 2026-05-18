@@ -320,16 +320,17 @@ model UserTagPreference {
 // ============================================================================
 
 model UserNotificationPreference {
-  id         String   @id @default(cuid())
-  userId     String
-  type       String   // chat_message, event_created, event_changed, invite, rsvp_update
-  channel    String   // push, email
-  enabled    Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  userId                String
+  type                  String   // chat_message, event_created, event_changed, invite, rsvp_update, event_start, mention
+  channel               String   // push, email, in_app
+  enabled               Boolean  @default(true)
+  reminderOffsetMinutes Int?     // event_start only: 15, 60, or 1440; null = default (15 min)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   // Relations
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, type, channel])
   @@index([userId])

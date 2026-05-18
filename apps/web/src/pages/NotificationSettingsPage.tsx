@@ -20,8 +20,15 @@ const NOTIFICATION_TYPES = [
   { key: 'event_changed', label: 'Event Changes' },
   { key: 'invite', label: 'Invitations' },
   { key: 'rsvp_update', label: 'RSVP Updates' },
-  { key: 'event_start', label: 'Event Starting' },
+  { key: 'mention', label: '@Mentions' },
 ] as const
+
+const REMINDER_OPTIONS: Array<{ value: number | null; label: string }> = [
+  { value: null, label: 'Off' },
+  { value: 15, label: '15 min' },
+  { value: 60, label: '1 hr' },
+  { value: 1440, label: '1 day' },
+]
 
 const CHANNELS = ['push', 'email', 'in_app'] as const
 
@@ -83,6 +90,13 @@ export default function NotificationSettingsPage() {
     Record<string, Record<string, boolean>>
   >({})
 
+  // Reminder offsets per channel: null = Off, 15/60/1440 = minutes before
+  const [reminderOffsets, setReminderOffsets] = useState<Record<string, number | null>>({
+    push: 15,
+    email: null,
+    in_app: 15,
+  })
+
   useEffect(() => {
     if (!prefsData?.preferences) return
     const map: Record<string, Record<string, boolean>> = {}
@@ -97,6 +111,19 @@ export default function NotificationSettingsPage() {
       }
     }
     setLocalPrefs(map)
+
+    // Load saved reminder offsets
+    const offsets: Record<string, number | null> = { push: 15, email: null, in_app: 15 }
+    for (const channel of CHANNELS) {
+      const pref = prefsData.preferences.find(
+        (p: { type: string; channel: string; enabled: boolean; reminderOffsetMinutes?: number | null }) =>
+          p.type === 'event_start' && p.channel === channel,
+      )
+      if (pref) {
+        offsets[channel] = pref.enabled ? (pref.reminderOffsetMinutes ?? 15) : null
+      }
+    }
+    setReminderOffsets(offsets)
   }, [prefsData])
 
   const togglePref = (type: string, channel: string) => {
@@ -175,7 +202,7 @@ export default function NotificationSettingsPage() {
   }
 
   const handleSave = async () => {
-    const prefs: Array<{ type: string; channel: string; enabled: boolean }> = []
+    const prefs: Array<{ type: string; channel: string; enabled: boolean; reminderOffsetMinutes?: number | null }> = []
     for (const type of NOTIFICATION_TYPES) {
       for (const channel of CHANNELS) {
         prefs.push({
@@ -184,6 +211,16 @@ export default function NotificationSettingsPage() {
           enabled: localPrefs[type.key]?.[channel] ?? true,
         })
       }
+    }
+    // Append event_start reminder prefs
+    for (const channel of CHANNELS) {
+      const offset = reminderOffsets[channel] ?? null
+      prefs.push({
+        type: 'event_start',
+        channel,
+        enabled: offset !== null,
+        reminderOffsetMinutes: offset,
+      })
     }
     try {
       await updatePrefs.mutateAsync(prefs)
@@ -426,6 +463,40 @@ export default function NotificationSettingsPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Event Reminders */}
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 mb-6">
+        <div className="mb-4">
+          <h3 className="text-sm font-semibold text-gray-300">Event Reminders</h3>
+          <p className="text-xs text-gray-500 mt-0.5">Notify you before events you&apos;ve RSVPed yes to. Choose how far ahead per channel.</p>
+        </div>
+        <div className="space-y-4">
+          {CHANNELS.map((channel) => (
+            <div key={channel}>
+              <p className="text-xs font-medium text-gray-400 mb-2">{CHANNEL_LABELS[channel]}</p>
+              <div className="flex flex-wrap gap-2">
+                {REMINDER_OPTIONS.map((opt) => {
+                  const active = reminderOffsets[channel] === opt.value
+                  return (
+                    <button
+                      key={String(opt.value)}
+                      type="button"
+                      onClick={() => setReminderOffsets((prev) => ({ ...prev, [channel]: opt.value }))}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                        active
+                          ? 'bg-indigo-600 border-indigo-500 text-white'
+                          : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
