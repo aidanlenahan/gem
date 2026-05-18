@@ -34,6 +34,8 @@ const releases: Release[] = [
       { type: 'new', text: 'Accent colour picker in Settings — choose your highlight colour (indigo, violet, rose, amber, emerald, sky); pairs with both dark and light mode' },
       { type: 'new', text: 'How-to guides on the Help page — six illustrated accordion articles covering PWA installation, calendar subscription, photos, channels, roles, and push notifications' },
       { type: 'improved', text: 'Character limits enforced on all major inputs — event title (100), event details (3000), location (200), group name (60), group description (500), channel message (2000), channel name (32), photo caption (280); counters show remaining characters' },
+      { type: 'new', text: 'Event reminders — RSVP-yes members automatically receive a push or email notification 15 minutes, 1 hour, and 1 day before an event starts; reminder timing is configurable per-channel in Notification Settings' },
+      { type: 'improved', text: 'Empty-state illustrations — all "nothing here yet" placeholders (no events, no photos, no groups, no media) now show a simple SVG spot illustration instead of plain text' },
       { type: 'improved', text: 'Route-level code splitting — every page is now lazy-loaded, cutting the initial JS bundle size and speeding up first load' },
       { type: 'improved', text: 'Member count on the group page is now a button that jumps straight to the Members tab' },
       { type: 'improved', text: 'PWA icon updated — Apple touch icon added and PNG icon registered in the manifest so the home-screen shortcut looks correct on all platforms' },
@@ -257,8 +259,8 @@ function ApiHealthButton() {
 }
 
 
-function ReleaseRow({ release, defaultOpen = false }: { release: Release; defaultOpen?: boolean }) {
-  const [open, setOpen] = useState(defaultOpen)
+function ReleaseRow({ release, isCurrent = false }: { release: Release; isCurrent?: boolean }) {
+  const [open, setOpen] = useState(false)
 
   return (
     <div className="relative pl-8">
@@ -272,6 +274,11 @@ function ReleaseRow({ release, defaultOpen = false }: { release: Release; defaul
       >
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-lg font-bold text-gray-100">v{release.version}</span>
+          {isCurrent && (
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-300 border border-emerald-800/60">
+              Current
+            </span>
+          )}
           {release.label && (
             <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-950/60 text-indigo-300 border border-indigo-800/60">
               {release.label}
@@ -361,7 +368,7 @@ export default function UpdatesPage() {
 
           <div className="space-y-8">
             {releases.map((release, i) => (
-              <ReleaseRow key={release.version} release={release} defaultOpen={i === 0} />
+              <ReleaseRow key={release.version} release={release} isCurrent={i === 0} />
             ))}
           </div>
         </div>
