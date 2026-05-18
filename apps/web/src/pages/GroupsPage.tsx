@@ -169,6 +169,15 @@ export default function GroupsPage() {
         </div>
       ) : !data?.groups?.length ? (
         <EmptyState
+          icon={
+            <svg className="w-16 h-16" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="24" cy="22" r="9"/>
+              <path d="M4 54c0-11 9-20 20-20"/>
+              <circle cx="42" cy="22" r="9"/>
+              <path d="M42 34c11 0 20 9 20 20"/>
+              <line x1="32" y1="34" x2="32" y2="54"/>
+            </svg>
+          }
           title="No groups yet"
           description="Create your first friend group to get started."
           action={
