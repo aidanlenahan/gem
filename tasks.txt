@@ -4,7 +4,7 @@ Last updated: 2026-05-18
 Format: [x] = done, [ ] = pending, [-] = in progress / partial
 
 Tasks are grouped by the release they target.
-Only [x] items that are fully done ship in that version's release notes.
+Only [x] items that are fully done ship in that version's release notes.1
 ========================================================
 
 === v0.8 — Done ===
@@ -73,8 +73,10 @@ focus on reliability, UX rough edges, and prep for a small group of external use
 [ ] When keyboard opens on mobile channel view — shrink header and slide it toward the top
     border so the message input doesn't get pushed off screen
 
-[ ] Member directory / search — searchable list of all active members in a group with
+[x] Member directory / search — searchable list of all active members in a group with
     avatar, name, username, and join date; accessible from GroupPage Members tab
+    DONE 2026-05-18: search input filters by name/username/email; join date shown on each
+    card; joinedAt added to GroupMembersResponse type. Files: GroupPage.tsx, useGroups.ts
 
 [ ] Keyboard shortcut help modal — ? key opens an overlay listing all keyboard shortcuts
     (lightbox arrow nav, Escape, submit, etc.)

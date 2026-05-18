@@ -135,6 +135,7 @@ export default function GroupPage() {
   const [eventSearch, setEventSearch] = useState('')
   const [showInviteCode, setShowInviteCode] = useState(false)
   const [copiedCode, setCopiedCode] = useState(false)
+  const [memberSearch, setMemberSearch] = useState('')
   const [showCalendarModal, setShowCalendarModal] = useState(false)
   const [showCreateChannelModal, setShowCreateChannelModal] = useState(false)
   const [mediaLightboxIndex, setMediaLightboxIndex] = useState<number | null>(null)
@@ -687,11 +688,24 @@ export default function GroupPage() {
       {/* Members Tab */}
       {activeTab === 'members' && (
         <div className="space-y-4">
-          {/* Invite Users button + invite code panel — all members */}
-          <div className="flex justify-end">
+          {/* Search + Invite row */}
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <svg xmlns="http://www.w3.org/2000/svg" className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                <circle cx="11" cy="11" r="8" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-4.35-4.35" />
+              </svg>
+              <input
+                type="search"
+                value={memberSearch}
+                onChange={(e) => setMemberSearch(e.target.value)}
+                placeholder="Search members…"
+                className="w-full pl-9 pr-3 py-2 rounded-xl bg-gray-900 border border-gray-700 text-gray-200 placeholder-gray-500 text-sm focus:outline-none focus:border-indigo-500"
+              />
+            </div>
             <button
               onClick={handleShowInviteCode}
-              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-900/50 border border-indigo-700 text-indigo-300 hover:bg-indigo-800/50 transition-colors font-medium"
+              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-900/50 border border-indigo-700 text-indigo-300 hover:bg-indigo-800/50 transition-colors font-medium whitespace-nowrap"
             >
               Invite Users
             </button>
@@ -796,14 +810,27 @@ export default function GroupPage() {
           )}
 
           {/* Active members */}
-          {activeMembers.length > 0 && (
+          {activeMembers.length > 0 && (() => {
+            const q = memberSearch.trim().toLowerCase()
+            const filtered = q
+              ? activeMembers.filter(
+                  (m) =>
+                    m.name.toLowerCase().includes(q) ||
+                    (m.username?.toLowerCase().includes(q) ?? false) ||
+                    m.email.toLowerCase().includes(q),
+                )
+              : activeMembers
+            return (
             <div className="space-y-2">
               {pendingMembers.length > 0 && isAdmin && (
                 <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
                   Active Members ({activeMembers.length})
                 </h4>
               )}
-              {activeMembers.map((m) => {
+              {filtered.length === 0 && (
+                <p className="text-sm text-gray-500 text-center py-6">No members match "{memberSearch}"</p>
+              )}
+              {filtered.map((m) => {
                 const isSelf = m.userId === currentUser?.id
                 const canOwnerManageMember = isOwner && !isSelf && m.role !== 'owner'
                 return (
@@ -833,7 +860,11 @@ export default function GroupPage() {
                     {m.username && (
                       <p className="text-xs text-indigo-400">@{m.username}</p>
                     )}
-                    <p className="text-xs text-gray-500">{m.email}</p>
+                    <p className="text-xs text-gray-500">
+                      {m.joinedAt
+                        ? `Joined ${new Date(m.joinedAt).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
+                        : m.email}
+                    </p>
                   </div>
                   {(m.role === 'owner' || m.role === 'admin') && (
                     <span
@@ -945,7 +976,8 @@ export default function GroupPage() {
                 </div>
               )})}
             </div>
-          )}
+            )
+          })()}
         </div>
       )}
 
