@@ -4105,7 +4105,7 @@ app.get("/groups/:groupId/members", async (request, reply) => {
       ...(isOwnerOrAdmin ? {} : { status: "active" }),
     },
     include: {
-      user: { select: { id: true, email: true, name: true, username: true, avatarUrl: true } },
+      user: { select: { id: true, email: true, name: true, username: true, avatarUrl: true, showEmail: true } },
     },
     orderBy: { createdAt: "asc" },
   });
@@ -4113,7 +4113,7 @@ app.get("/groups/:groupId/members", async (request, reply) => {
   return reply.send({
     members: members.map((m) => ({
       userId: m.user.id,
-      email: m.user.email,
+      ...(m.user.showEmail ? { email: m.user.email } : {}),
       name: m.user.name,
       username: m.user.username,
       avatarUrl: m.user.avatarUrl,

@@ -793,7 +793,7 @@ export default function GroupPage() {
                       {m.username && (
                         <p className="text-xs text-indigo-400">@{m.username}</p>
                       )}
-                      <p className="text-xs text-gray-500">{m.email}</p>
+                      {m.email && <p className="text-xs text-gray-500">{m.email}</p>}
                     </div>
                     <span className="text-xs px-2 py-1 rounded-full bg-amber-900 text-amber-300">
                       pending
@@ -817,37 +817,6 @@ export default function GroupPage() {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-
-          {/* Leave Group — non-owners only */}
-          {myMembership && !isOwner && (
-            <div className="flex justify-end pt-1">
-              {confirmLeave ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400">Leave this group?</span>
-                  <button
-                    onClick={handleLeaveGroup}
-                    disabled={leaveGroup.isPending}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-red-900/60 border border-red-700 text-red-300 hover:bg-red-900 transition-colors disabled:opacity-50"
-                  >
-                    {leaveGroup.isPending ? 'Leaving...' : 'Confirm'}
-                  </button>
-                  <button
-                    onClick={() => setConfirmLeave(false)}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setConfirmLeave(true)}
-                  className="text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-400 hover:text-red-400 hover:border-red-700 transition-colors"
-                >
-                  Leave Group
-                </button>
-              )}
             </div>
           )}
 
@@ -889,7 +858,7 @@ export default function GroupPage() {
                     {m.username && (
                       <p className="text-xs text-indigo-400">@{m.username}</p>
                     )}
-                    <p className="text-xs text-gray-500">{m.email}</p>
+                    {m.email && <p className="text-xs text-gray-500">{m.email}</p>}
                   </div>
                   {(m.role === 'owner' || m.role === 'admin') && (
                     <span
@@ -899,6 +868,38 @@ export default function GroupPage() {
                     >
                       <RoleGlyph role={m.role} />
                     </span>
+                  )}
+                  {isSelf && !isOwner && (
+                    confirmLeave ? (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={handleLeaveGroup}
+                          disabled={leaveGroup.isPending}
+                          className="text-xs px-2.5 py-1.5 rounded-lg bg-red-900/60 border border-red-700 text-red-300 hover:bg-red-900 transition-colors disabled:opacity-50"
+                        >
+                          {leaveGroup.isPending ? 'Leaving…' : 'Confirm'}
+                        </button>
+                        <button
+                          onClick={() => setConfirmLeave(false)}
+                          className="text-xs px-2.5 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        title="Leave group"
+                        onClick={() => setConfirmLeave(true)}
+                        className="flex h-9 w-9 items-center justify-center rounded-lg text-red-500 hover:text-red-400 hover:bg-red-950/40 transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                          <polyline points="16 17 21 12 16 7" />
+                          <line x1="21" y1="12" x2="9" y2="12" />
+                        </svg>
+                      </button>
+                    )
                   )}
                   {!isSelf && (
                     <div className="relative" ref={memberActionMenuUserId === m.userId ? memberActionMenuRef : null}>

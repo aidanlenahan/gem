@@ -572,7 +572,7 @@ export default function GroupManagePage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-white truncate">{m.name}</p>
                   {m.username && <p className="text-xs text-indigo-400">@{m.username}</p>}
-                  <p className="text-xs text-gray-500 truncate">{m.email}</p>
+                  {m.email && <p className="text-xs text-gray-500 truncate">{m.email}</p>}
                 </div>
                 <button
                   onClick={() => handleApprove(m.userId)}
@@ -627,7 +627,7 @@ export default function GroupManagePage() {
                       </p>
                     )}
                     {m.username && <p className="text-xs text-indigo-400">@{m.username}</p>}
-                    <p className="text-xs text-gray-500 truncate">{m.email}</p>
+                    {m.email && <p className="text-xs text-gray-500 truncate">{m.email}</p>}
                   </div>
                   {(m.role === 'owner' || m.role === 'admin') && (
                     <span

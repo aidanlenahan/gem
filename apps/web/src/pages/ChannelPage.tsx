@@ -1462,7 +1462,7 @@ function ManageSubscribersModal({
                   <Avatar name={member.name} avatarUrl={member.avatarUrl ?? undefined} size="sm" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-white truncate">{member.name}</p>
-                    <p className="text-xs text-gray-500 truncate">{member.email}</p>
+                    {member.email && <p className="text-xs text-gray-500 truncate">{member.email}</p>}
                   </div>
                   <button
                     onClick={() => void (isSubscribed ? handleRemove(member.userId) : handleAdd(member.userId))}
