@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import PageToolbar from '../components/PageToolbar'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -26,6 +26,7 @@ import {
   useAddToAlbum,
   useRemoveFromAlbum,
   useDeleteGroupMediaAsset,
+  useLeaveGroup,
 } from '../hooks/useGroups'
 import type { MediaAlbum } from '../hooks/useGroups'
 import { MediaLightbox } from '../components/MediaLightbox'
@@ -50,6 +51,7 @@ type EventSummary = {
   endsAt?: string | null
   location?: string | null
   isPrivate?: boolean
+  isLegendary?: boolean
   tags?: Array<{ id: string; name: string; color?: string | null }>
   rsvps?: Array<{ status: string }>
 }
@@ -125,6 +127,7 @@ function AdminEventCard({ event, canDelete, layout }: { event: EventSummary; can
 
 export default function GroupPage() {
   const { groupId } = useParams<{ groupId: string }>()
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<Tab>('events')
   const [eventLayout, setEventLayout] = useState<'grid' | 'list'>(() => {
     return (localStorage.getItem('gem:eventLayout') as 'grid' | 'list') ?? 'grid'
@@ -145,6 +148,7 @@ export default function GroupPage() {
   const [albumPickerPhotoId, setAlbumPickerPhotoId] = useState<string | null>(null)
   const [newChannelName, setNewChannelName] = useState('')
   const [newChannelInviteOnly, setNewChannelInviteOnly] = useState(false)
+  const [confirmLeave, setConfirmLeave] = useState(false)
   const [copiedFeedUrl, setCopiedFeedUrl] = useState(false)
   const [calendarFilterMode, setCalendarFilterMode] = useState<'all' | 'rsvp' | 'tags'>('all')
   const [calendarTagIds, setCalendarTagIds] = useState<string[]>([])
@@ -180,6 +184,7 @@ export default function GroupPage() {
   const regenerateCode = useRegenerateInviteCode(groupId!)
   const approveMember = useApproveMember(groupId!)
   const denyMember = useDenyMember(groupId!)
+  const leaveGroup = useLeaveGroup(groupId!)
 
   // Per-user mute
   const qc = useQueryClient()
@@ -371,6 +376,15 @@ export default function GroupPage() {
     }
   }
 
+  const handleLeaveGroup = async () => {
+    try {
+      await leaveGroup.mutateAsync()
+      navigate('/groups')
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to leave group'))
+    }
+  }
+
   if (groupLoading) {
     return (
       <div className="flex justify-center py-16">
@@ -480,6 +494,17 @@ export default function GroupPage() {
           </button>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {(isAdmin || group.statsEnabled) && (
+            <Link
+              to={`/groups/${groupId}/stats`}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-300 hover:border-indigo-600 hover:text-white text-xs font-medium transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              Stats
+            </Link>
+          )}
           {isAdmin && (
             <Link
               to={`/groups/${groupId}/manage`}
@@ -792,6 +817,37 @@ export default function GroupPage() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Leave Group — non-owners only */}
+          {myMembership && !isOwner && (
+            <div className="flex justify-end pt-1">
+              {confirmLeave ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400">Leave this group?</span>
+                  <button
+                    onClick={handleLeaveGroup}
+                    disabled={leaveGroup.isPending}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-red-900/60 border border-red-700 text-red-300 hover:bg-red-900 transition-colors disabled:opacity-50"
+                  >
+                    {leaveGroup.isPending ? 'Leaving...' : 'Confirm'}
+                  </button>
+                  <button
+                    onClick={() => setConfirmLeave(false)}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmLeave(true)}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-400 hover:text-red-400 hover:border-red-700 transition-colors"
+                >
+                  Leave Group
+                </button>
+              )}
             </div>
           )}
 

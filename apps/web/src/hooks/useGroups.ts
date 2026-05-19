@@ -6,6 +6,7 @@ export type GroupSummary = {
   name: string
   description?: string | null
   avatarUrl?: string | null
+  statsEnabled?: boolean
   _count?: { memberships?: number }
 }
 
@@ -206,12 +207,20 @@ export function useDenyMember(groupId: string) {
 export function useUpdateGroup(groupId: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (data: { name?: string; description?: string; avatarUrl?: string | null }) =>
+    mutationFn: (data: { name?: string; description?: string; avatarUrl?: string | null; statsEnabled?: boolean }) =>
       apiFetch(`/groups/${groupId}`, { method: 'PATCH', body: JSON.stringify(data) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['groups', groupId] })
       qc.invalidateQueries({ queryKey: ['groups'] })
     },
+  })
+}
+
+export function useLeaveGroup(groupId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => apiFetch(`/groups/${groupId}/leave`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups'] }),
   })
 }
 
