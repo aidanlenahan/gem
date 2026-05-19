@@ -425,18 +425,37 @@ export default function GroupsPage() {
             {joinTab === 'code' && (
               <div>
                 <p className="text-gray-400 text-xs mb-2">Paste the invite code shared by the group owner.</p>
-                <input
-                  value={joinCode}
-                  onChange={(e) => {
-                    const raw = e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 16)
-                    setJoinCode(raw)
-                    setJoinError('')
-                  }}
-                  placeholder="XXXX-XXXX-XXXX"
-                  maxLength={16}
-                  required={joinTab === 'code'}
-                  className={`w-full bg-gray-800 border rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono tracking-wider ${joinError ? 'border-red-500' : 'border-gray-700'}`}
-                />
+                <div className="flex gap-2">
+                  <input
+                    value={joinCode}
+                    onChange={(e) => {
+                      const raw = e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 16)
+                      setJoinCode(raw)
+                      setJoinError('')
+                    }}
+                    placeholder="XXXX-XXXX-XXXX"
+                    maxLength={16}
+                    required={joinTab === 'code'}
+                    className={`flex-1 min-w-0 bg-gray-800 border rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono tracking-wider ${joinError ? 'border-red-500' : 'border-gray-700'}`}
+                  />
+                  <button
+                    type="button"
+                    title="Paste from clipboard"
+                    onClick={async () => {
+                      try {
+                        const text = await navigator.clipboard.readText()
+                        const raw = text.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 16)
+                        setJoinCode(raw)
+                        setJoinError('')
+                      } catch { /* clipboard permission denied */ }
+                    }}
+                    className="shrink-0 flex items-center justify-center w-11 h-11 rounded-xl bg-gray-800 border border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-500 transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                  </button>
+                </div>
                 {joinError && <p className="mt-1.5 text-sm text-red-400">{joinError}</p>}
               </div>
             )}
