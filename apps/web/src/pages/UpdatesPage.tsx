@@ -19,6 +19,24 @@ interface Release {
 
 const releases: Release[] = [
   {
+    version: '0.9',
+    date: 'May 2026',
+    label: 'Beta',
+    summary: 'Leave group, per-group stats toggle, email on profile, auto-hyperlinks in chat, improved join modal, legendary events, welcome email, and first-run onboarding.',
+    changes: [
+      { type: 'new', text: 'Leave Group — non-owner members can leave any group from the Members tab with a confirm step; group owners must transfer ownership or delete the group instead' },
+      { type: 'new', text: 'Stats page toggle — group admins can enable the Stats page for all members (not just admins) from group management; a Stats link appears in the group header when enabled' },
+      { type: 'new', text: 'Stats link on member profiles — when viewing another member\'s profile, groups you share that have Stats enabled show a direct Stats link' },
+      { type: 'new', text: 'Email visibility on profile — a toggle in Settings lets you choose whether your email address is shown on your public profile page' },
+      { type: 'new', text: 'Auto-hyperlinks in channel chat — URLs typed in messages automatically become clickable links that open in a new tab' },
+      { type: 'improved', text: 'Join Group modal now has Code and URL tabs — paste an invite code directly or drop in the full invite link; the URL tab includes a clipboard paste button' },
+      { type: 'new', text: 'Legendary events — admins can mark any event as Legendary from the edit form; legendary events get a gold card border and a ★ star in the title on the group page' },
+      { type: 'new', text: 'Welcome email — a welcome email is sent after email verification to help new members get started' },
+      { type: 'new', text: 'First-run onboarding — new users with no groups see a guided modal walking through creating a group, inviting friends, and planning a first event' },
+      { type: 'improved', text: 'Empty state on the Groups page — brand-new users see a welcoming 3-step illustration instead of a blank page' },
+    ],
+  },
+  {
     version: '0.8',
     date: 'May 2026',
     label: 'Beta',

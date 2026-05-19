@@ -14,6 +14,7 @@ type UpdateMeResponse = {
     usernameChangedAt?: string | null
     avatarUrl?: string | null
     theme?: string | null
+    showEmail?: boolean
   }
 }
 
@@ -28,6 +29,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [usernameError, setUsernameError] = useState('')
+  const [showEmailToggling, setShowEmailToggling] = useState(false)
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -79,6 +81,24 @@ export default function ProfilePage() {
     } finally {
       setUploadingAvatar(false)
       if (avatarInputRef.current) avatarInputRef.current.value = ''
+    }
+  }
+
+  const handleToggleShowEmail = async () => {
+    setShowEmailToggling(true)
+    try {
+      const newValue = !user?.showEmail
+      const data = await apiFetch<UpdateMeResponse>('/users/me', {
+        method: 'PATCH',
+        body: JSON.stringify({ showEmail: newValue }),
+      })
+      if (token && data.user) {
+        login(token, { ...user!, ...data.user, username: data.user.username ?? undefined, avatarUrl: data.user.avatarUrl ?? undefined })
+      }
+    } catch {
+      toast.error('Failed to update email visibility')
+    } finally {
+      setShowEmailToggling(false)
     }
   }
 
@@ -207,14 +227,32 @@ export default function ProfilePage() {
           ) : null}
         </div>
 
-        {/* Email (read-only) */}
-        <div>
-          <label className="block text-sm text-gray-400 mb-1">Email</label>
+        {/* Email (read-only) + visibility toggle */}
+        <div className="space-y-2">
+          <label className="block text-sm text-gray-400">Email</label>
           <input
             value={user?.email ?? ''}
             readOnly
             className="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-gray-400 cursor-not-allowed"
           />
+          <div className="flex items-center justify-between gap-4 px-1">
+            <div>
+              <p className="text-sm text-gray-300">Show email on profile</p>
+              <p className="text-xs text-gray-500">Other group members can see your email on your public profile</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleToggleShowEmail}
+              disabled={showEmailToggling}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 disabled:opacity-50 ${
+                user?.showEmail ? 'bg-indigo-600' : 'bg-gray-700'
+              }`}
+              role="switch"
+              aria-checked={user?.showEmail}
+            >
+              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${user?.showEmail ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </div>
         </div>
 
         <button

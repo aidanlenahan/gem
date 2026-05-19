@@ -5,7 +5,7 @@ import type { GroupSummary } from '../hooks/useGroups'
 import Modal from '../components/Modal'
 import Spinner from '../components/Spinner'
 import EmptyState from '../components/EmptyState'
-import { getApiErrorMessage, ApiError } from '../lib/api'
+import { getApiErrorMessage, ApiError, apiFetch } from '../lib/api'
 import { useIsOnline } from '../hooks/useIsOnline'
 import { useAuthStore } from '../stores/authStore'
 
@@ -18,6 +18,9 @@ function getGreeting(name: string): string {
       `Rise and shine, ${name}`,
       `Morning, ${name}`,
       `Hey ${name}, top of the mornin'`,
+      `Hey ${name}`,
+      `Welcome back, ${name}`,
+      `How's it going, ${name}`,
     ]
   } else if (hour >= 12 && hour < 17) {
     phrases = [
@@ -25,6 +28,8 @@ function getGreeting(name: string): string {
       `Hey ${name}, good day!`,
       `Hello, ${name}`,
       `Hey there, ${name}`,
+      `Welcome back, ${name}`,
+      `How's your afternoon, ${name}`,
     ]
   } else if (hour >= 17 && hour < 22) {
     phrases = [
@@ -32,6 +37,8 @@ function getGreeting(name: string): string {
       `Hey ${name}, hope you had a great day`,
       `Evening, ${name}`,
       `Hi ${name}`,
+      `Welcome back, ${name}`,
+      `How was your day, ${name}`,
     ]
   } else {
     phrases = [
@@ -39,6 +46,8 @@ function getGreeting(name: string): string {
       `Still up, ${name}?`,
       `Hello, ${name}!`,
       `Hey night owl, ${name}!`,
+      `Late night, ${name}`,
+      `Hey ${name}`,
     ]
   }
   // Pick a phrase deterministically per name+hour so it doesn't jump on re-render
@@ -50,11 +59,12 @@ export default function GroupsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { data, isLoading, isError, error, refetch } = useGroups()
   const isOnline = useIsOnline()
-  const { user } = useAuthStore()
+  const { user, setUser } = useAuthStore()
   const createGroup = useCreateGroup()
   const joinGroup = useJoinGroup()
   const [showModal, setShowModal] = useState(false)
   const [showJoinModal, setShowJoinModal] = useState(false)
+  const [showOnboarding, setShowOnboarding] = useState(false)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [betaCode, setBetaCode] = useState('')
@@ -62,6 +72,9 @@ export default function GroupsPage() {
   const [joinCode, setJoinCode] = useState('')
   const [joinError, setJoinError] = useState('')
   const [joinSuccess, setJoinSuccess] = useState('')
+  const [joinTab, setJoinTab] = useState<'code' | 'url'>('code')
+  const [joinUrl, setJoinUrl] = useState('')
+  const [joinUrlError, setJoinUrlError] = useState('')
 
   useEffect(() => {
     const inviteCode = searchParams.get('invite')
@@ -80,6 +93,20 @@ export default function GroupsPage() {
     setJoinSuccess('')
     setShowJoinModal(true)
   }, [searchParams])
+
+  useEffect(() => {
+    if (!isLoading && data && !data.groups?.length && user && !user.onboardingDone) {
+      setShowOnboarding(true)
+    }
+  }, [isLoading, data, user])
+
+  const handleDismissOnboarding = async () => {
+    setShowOnboarding(false)
+    try {
+      const res = await apiFetch('/users/me', { method: 'PATCH', body: JSON.stringify({ onboardingDone: true }) }) as { user: typeof user }
+      if (res?.user && user) setUser({ ...user, onboardingDone: true })
+    } catch { /* non-critical */ }
+  }
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -105,25 +132,49 @@ export default function GroupsPage() {
     }
   }
 
+  const extractCodeFromUrl = (url: string): string | null => {
+    try {
+      const parsed = new URL(url.trim())
+      const invite = parsed.searchParams.get('invite')
+      if (invite) return invite.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12)
+    } catch { /* not a URL */ }
+    return null
+  }
+
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault()
     setJoinError('')
+    setJoinUrlError('')
     setJoinSuccess('')
-    const rawCode = joinCode.replace(/-/g, '').trim()
+
+    let rawCode: string
+    if (joinTab === 'url') {
+      const extracted = extractCodeFromUrl(joinUrl)
+      if (!extracted || extracted.length !== 12) {
+        setJoinUrlError('Could not find a valid invite code in that URL.')
+        return
+      }
+      rawCode = extracted
+    } else {
+      rawCode = joinCode.replace(/-/g, '').trim()
+    }
+
     try {
       const result = await joinGroup.mutateAsync(rawCode)
       setJoinSuccess(`Join request sent for "${result.groupName}". The owner will review it shortly.`)
       setJoinCode('')
+      setJoinUrl('')
       setSearchParams({}, { replace: true })
     } catch (err: unknown) {
+      const setErr = joinTab === 'url' ? setJoinUrlError : setJoinError
       if (err instanceof ApiError && err.code === 'INVALID_INVITE_CODE') {
-        setJoinError('Invalid invite code. Check the code and try again.')
+        setErr('Invalid invite code. Check the link and try again.')
       } else if (err instanceof ApiError && err.code === 'ALREADY_MEMBER') {
-        setJoinError('You are already a member of this group.')
+        setErr('You are already a member of this group.')
       } else if (err instanceof ApiError && err.code === 'ALREADY_PENDING') {
-        setJoinError('You already have a pending request for this group.')
+        setErr('You already have a pending request for this group.')
       } else {
-        setJoinError(getApiErrorMessage(err, 'Failed to send join request.'))
+        setErr(getApiErrorMessage(err, 'Failed to send join request.'))
       }
     }
   }
@@ -137,7 +188,7 @@ export default function GroupsPage() {
         <h2 className="text-2xl font-bold text-white">Your Groups</h2>
         <div className="flex gap-2">
           <button
-            onClick={() => { setShowJoinModal(true); setJoinError(''); setJoinSuccess(''); setJoinCode(''); setSearchParams({}, { replace: true }) }}
+            onClick={() => { setShowJoinModal(true); setJoinTab('code'); setJoinError(''); setJoinUrlError(''); setJoinSuccess(''); setJoinCode(''); setJoinUrl(''); setSearchParams({}, { replace: true }) }}
             className="whitespace-nowrap bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
           >
             Join Group
@@ -168,35 +219,46 @@ export default function GroupsPage() {
           )}
         </div>
       ) : !data?.groups?.length ? (
-        <EmptyState
-          icon={
-            <svg className="w-16 h-16" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="24" cy="22" r="9"/>
-              <path d="M4 54c0-11 9-20 20-20"/>
-              <circle cx="42" cy="22" r="9"/>
-              <path d="M42 34c11 0 20 9 20 20"/>
-              <line x1="32" y1="34" x2="32" y2="54"/>
-            </svg>
-          }
-          title="No groups yet"
-          description="Create your first friend group to get started."
-          action={
-            <div className="flex gap-3">
-              <button
-                onClick={() => { setShowJoinModal(true); setJoinError(''); setJoinSuccess(''); setJoinCode(''); setSearchParams({}, { replace: true }) }}
-                className="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
-              >
-                Join Group
-              </button>
-              <button
-                onClick={() => setShowModal(true)}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-sm font-semibold"
-              >
-                Create Group
-              </button>
-            </div>
-          }
-        />
+        <div className="flex flex-col items-center py-12 px-4 text-center gap-6">
+          <svg className="w-16 h-16 text-gray-600" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="24" cy="22" r="9"/>
+            <path d="M4 54c0-11 9-20 20-20"/>
+            <circle cx="42" cy="22" r="9"/>
+            <path d="M42 34c11 0 20 9 20 20"/>
+            <line x1="32" y1="34" x2="32" y2="54"/>
+          </svg>
+          <div>
+            <h3 className="text-xl font-bold text-white mb-1">Welcome to Gem!</h3>
+            <p className="text-gray-400 text-sm">Your private space for friends to plan events and stay connected.</p>
+          </div>
+          <div className="w-full max-w-xs space-y-2 text-left">
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Get started in 3 steps</p>
+            {([
+              { n: '1', text: 'Create a group for your friend circle' },
+              { n: '2', text: 'Invite friends with a shareable link' },
+              { n: '3', text: 'Plan your first event together' },
+            ] as const).map(({ n, text }) => (
+              <div key={n} className="flex items-center gap-3 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+                <span className="w-6 h-6 flex items-center justify-center rounded-full bg-indigo-900 text-indigo-300 text-xs font-bold shrink-0">{n}</span>
+                <span className="text-sm text-gray-300">{text}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => { setShowJoinModal(true); setJoinTab('code'); setJoinError(''); setJoinUrlError(''); setJoinSuccess(''); setJoinCode(''); setJoinUrl(''); setSearchParams({}, { replace: true }) }}
+              className="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+            >
+              Join Group
+            </button>
+            <button
+              onClick={() => setShowModal(true)}
+              className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-sm font-semibold"
+            >
+              Create Group
+            </button>
+          </div>
+        </div>
       ) : (
         <>
           {isError && !isOnline && (
@@ -228,6 +290,53 @@ export default function GroupsPage() {
           </div>
         </>
       )}
+
+      <Modal open={showOnboarding} onClose={handleDismissOnboarding}>
+        <div className="text-center px-2 pb-2">
+          <div className="flex items-center justify-center mb-4">
+            <svg className="w-14 h-14 text-indigo-400" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="24" cy="22" r="9"/>
+              <path d="M4 54c0-11 9-20 20-20"/>
+              <circle cx="42" cy="22" r="9"/>
+              <path d="M42 34c11 0 20 9 20 20"/>
+              <line x1="32" y1="34" x2="32" y2="54"/>
+            </svg>
+          </div>
+          <h3 className="text-xl font-bold text-white mb-1">Welcome to Gem!</h3>
+          <p className="text-gray-400 text-sm mb-5">Your private space for friends to plan events and stay connected.</p>
+          <div className="space-y-2 text-left mb-5">
+            {([
+              { n: '1', label: 'Create a group', desc: 'Make a private space for your friend circle' },
+              { n: '2', label: 'Invite your friends', desc: 'Share a link or invite code — no signup spam' },
+              { n: '3', label: 'Plan events together', desc: 'Create events, RSVP, and chat in one place' },
+            ] as const).map(({ n, label, desc }) => (
+              <div key={n} className="flex items-start gap-3 bg-gray-800 rounded-xl px-4 py-3">
+                <span className="w-6 h-6 flex items-center justify-center rounded-full bg-indigo-900 text-indigo-300 text-xs font-bold shrink-0 mt-0.5">{n}</span>
+                <div>
+                  <p className="text-sm font-semibold text-white">{label}</p>
+                  <p className="text-xs text-gray-400">{desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={handleDismissOnboarding}
+              className="flex-1 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+            >
+              Got it
+            </button>
+            <button
+              type="button"
+              onClick={() => { handleDismissOnboarding(); setShowModal(true) }}
+              className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+            >
+              Create a Group
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal open={showModal} onClose={() => { setShowModal(false); setBetaCodeError('') }}>
         <h3 className="text-lg font-bold text-white mb-4">Create Group</h3>
@@ -279,9 +388,8 @@ export default function GroupsPage() {
         </form>
       </Modal>
 
-      <Modal open={showJoinModal} onClose={() => { setShowJoinModal(false); setJoinError(''); setJoinSuccess(''); setJoinCode(''); setSearchParams({}, { replace: true }) }}>
-        <h3 className="text-lg font-bold text-white mb-1">Join a Group</h3>
-        <p className="text-gray-400 text-sm mb-4">Enter the invite code shared by the group owner (e.g. <span className="font-mono text-gray-300">XXXX-XXXX-XXXX</span>).</p>
+      <Modal open={showJoinModal} onClose={() => { setShowJoinModal(false); setJoinError(''); setJoinUrlError(''); setJoinSuccess(''); setJoinCode(''); setJoinUrl(''); setSearchParams({}, { replace: true }) }}>
+        <h3 className="text-lg font-bold text-white mb-3">Join a Group</h3>
         {joinSuccess ? (
           <div className="space-y-4">
             <div className="px-4 py-3 rounded-xl bg-emerald-900/40 border border-emerald-700 text-emerald-300 text-sm">
@@ -297,36 +405,89 @@ export default function GroupsPage() {
             </div>
           </div>
         ) : (
-          <form onSubmit={handleJoin} className="space-y-3">
-            <div>
-              <input
-                value={joinCode}
-                onChange={(e) => {
-                  // Allow alphanumeric and dashes; auto-uppercase
-                  const raw = e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 16)
-                  setJoinCode(raw)
-                  setJoinError('')
-                }}
-                placeholder="e.g. XXXX-XXXX-XXXX"
-                maxLength={16}
-                required
-                className={`w-full bg-gray-800 border rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono tracking-wider ${joinError ? 'border-red-500' : 'border-gray-700'}`}
-              />
-              {joinError && (
-                <p className="mt-1.5 text-sm text-red-400">{joinError}</p>
-              )}
+          <form onSubmit={handleJoin} className="space-y-4">
+            {/* Tab switcher */}
+            <div className="flex rounded-xl bg-gray-800 p-1 gap-1">
+              {(['code', 'url'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => { setJoinTab(tab); setJoinError(''); setJoinUrlError('') }}
+                  className={`flex-1 py-1.5 rounded-lg text-sm font-medium transition-colors capitalize ${
+                    joinTab === tab ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  {tab === 'code' ? 'Code' : 'URL'}
+                </button>
+              ))}
             </div>
+
+            {joinTab === 'code' && (
+              <div>
+                <p className="text-gray-400 text-xs mb-2">Paste the invite code shared by the group owner.</p>
+                <input
+                  value={joinCode}
+                  onChange={(e) => {
+                    const raw = e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 16)
+                    setJoinCode(raw)
+                    setJoinError('')
+                  }}
+                  placeholder="XXXX-XXXX-XXXX"
+                  maxLength={16}
+                  required={joinTab === 'code'}
+                  className={`w-full bg-gray-800 border rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono tracking-wider ${joinError ? 'border-red-500' : 'border-gray-700'}`}
+                />
+                {joinError && <p className="mt-1.5 text-sm text-red-400">{joinError}</p>}
+              </div>
+            )}
+
+            {joinTab === 'url' && (
+              <div>
+                <p className="text-gray-400 text-xs mb-2">Paste the full invite link — the code is extracted automatically.</p>
+                <div className="flex gap-2">
+                  <input
+                    value={joinUrl}
+                    onChange={(e) => { setJoinUrl(e.target.value); setJoinUrlError('') }}
+                    placeholder="https://gem.example.com/groups?invite=…"
+                    required={joinTab === 'url'}
+                    className={`flex-1 min-w-0 bg-gray-800 border rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm ${joinUrlError ? 'border-red-500' : 'border-gray-700'}`}
+                  />
+                  <button
+                    type="button"
+                    title="Paste from clipboard"
+                    onClick={async () => {
+                      try {
+                        const text = await navigator.clipboard.readText()
+                        setJoinUrl(text.trim())
+                        setJoinUrlError('')
+                      } catch { /* clipboard permission denied */ }
+                    }}
+                    className="shrink-0 flex items-center justify-center w-11 h-11 rounded-xl bg-gray-800 border border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-500 transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.75}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                  </button>
+                </div>
+                {joinUrlError && <p className="mt-1.5 text-sm text-red-400">{joinUrlError}</p>}
+              </div>
+            )}
+
             <div className="flex gap-3 justify-end">
               <button
                 type="button"
-                onClick={() => setShowJoinModal(false)}
+                onClick={() => { setShowJoinModal(false); setJoinError(''); setJoinUrlError(''); setJoinCode(''); setJoinUrl('') }}
                 className="px-4 py-2 text-gray-400 hover:text-white text-sm"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                disabled={joinGroup.isPending || joinCode.replace(/-/g, '').trim().length !== 12}
+                disabled={
+                  joinGroup.isPending ||
+                  (joinTab === 'code' && joinCode.replace(/-/g, '').trim().length !== 12) ||
+                  (joinTab === 'url' && !joinUrl.trim())
+                }
                 className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50"
               >
                 {joinGroup.isPending ? 'Sending...' : 'Request to Join'}

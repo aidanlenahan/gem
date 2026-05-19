@@ -9,6 +9,8 @@ interface User {
   username?: string | null
   avatarUrl?: string | null
   theme?: string | null
+  showEmail?: boolean
+  onboardingDone?: boolean
   isAdmin?: boolean
 }
 
@@ -19,6 +21,7 @@ interface AuthState {
   login: (token: string, user: User) => void
   logout: () => void
   markHydrated: () => void
+  setUser: (user: User) => void
 }
 
 function persistAuthSnapshot(user: User | null, token: string | null) {
@@ -81,6 +84,12 @@ export const useAuthStore = create<AuthState>()(
       },
       markHydrated: () => {
         set({ hydrated: true })
+      },
+      setUser: (user) => {
+        set((s) => {
+          persistAuthSnapshot(user, s.token)
+          return { user }
+        })
       },
     }),
     {

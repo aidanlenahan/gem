@@ -83,6 +83,7 @@ export default function GroupManagePage() {
   })
 
   const updateGroup = useUpdateGroup(groupId!)
+  const [statsToggling, setStatsToggling] = useState(false)
   const deleteGroup = useDeleteGroup(groupId!)
   const updateMemberRole = useUpdateMemberRole(groupId!)
   const removeMember = useRemoveMember(groupId!)
@@ -214,6 +215,18 @@ export default function GroupManagePage() {
       toast.error(getApiErrorMessage(err, 'Failed to update group'))
     } finally {
       setInfoSaving(false)
+    }
+  }
+
+  const handleToggleStats = async () => {
+    setStatsToggling(true)
+    try {
+      await updateGroup.mutateAsync({ statsEnabled: !group.statsEnabled })
+      toast.success(group.statsEnabled ? 'Stats page disabled' : 'Stats page enabled for all members')
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, 'Failed to update stats setting'))
+    } finally {
+      setStatsToggling(false)
     }
   }
 
@@ -457,6 +470,27 @@ export default function GroupManagePage() {
             </button>
           </div>
         </form>
+
+        <div className="border-t border-gray-800 pt-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm text-gray-200">Stats page</p>
+              <p className="text-xs text-gray-500">When enabled, all group members can view group stats</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleToggleStats}
+              disabled={statsToggling}
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 disabled:opacity-50 ${
+                group.statsEnabled ? 'bg-indigo-600' : 'bg-gray-700'
+              }`}
+              role="switch"
+              aria-checked={group.statsEnabled}
+            >
+              <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${group.statsEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </div>
+        </div>
       </section>
 
       {/* ── Invite Link ── */}
