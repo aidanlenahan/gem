@@ -80,7 +80,11 @@ export const helpArticles: HelpArticle[] = [
           <li>Edit or delete your own messages</li>
           <li>Unread dot on channels with new messages since your last visit</li>
         </ul>
-        <p className="mt-3 text-gray-500 text-xs">On mobile, tap the hamburger icon inside the chat to slide open the full channel list without leaving the conversation.</p>
+        <p className="font-medium text-gray-200 mt-3">On mobile</p>
+        <ul className="list-disc list-inside space-y-1 mt-1">
+          <li>Tap the hamburger icon inside the chat to slide open the full channel list without leaving the conversation.</li>
+          <li>Slide right on any message to bring up actions for that message. You can pin a message, react, or edit and delete the message if it's yours.</li>
+        </ul>
       </>
     ),
   },
