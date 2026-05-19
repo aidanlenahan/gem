@@ -755,6 +755,7 @@ const updateGroupBodySchema = z.object({
   name: z.string().min(1).max(60).optional(),
   description: z.string().max(500).optional(),
   avatarUrl: z.string().url().nullable().optional(),
+  statsEnabled: z.boolean().optional(),
 });
 
 const groupMemberBodySchema = z.object({
@@ -770,6 +771,8 @@ const updateUserBodySchema = z.object({
   name: z.string().min(1).max(255).optional(),
   username: z.string().min(2).max(40).regex(/^[a-zA-Z0-9_]+$/).optional(),
   avatarUrl: z.string().url().nullable().optional(),
+  showEmail: z.boolean().optional(),
+  onboardingDone: z.boolean().optional(),
   theme: z.string().regex(/^(dark|light)(:(indigo|violet|sky|emerald|rose|amber))?$/).optional(),
 });
 
@@ -1436,6 +1439,16 @@ app.post("/auth/verify-email", { config: { rateLimit: { max: 20, timeWindow: "1 
   await redis.del(`verify:email:${body.userId}`);
   await redis.del(`verify:cooldown:${body.userId}`);
 
+  if (isMailConfigured()) {
+    const webBase = (process.env.WEB_BASE_URL || "").replace(/\/$/, "");
+    sendTransactionalEmail({
+      to: user.email,
+      subject: "Welcome to Gem!",
+      html: `<p>Hi ${user.name},</p><p>Your account is verified. <a href="${webBase}">Start planning</a> your first event with friends.</p>`,
+      text: `Hi ${user.name},\n\nYour Gem account is verified. Head to ${webBase} to start planning events with friends.`,
+    }).catch(() => {});
+  }
+
   const token = await reply.jwtSign({ sub: user.id, email: user.email }, { expiresIn: jwtExpiresIn });
   return reply.send({ token, user: { ...user, isAdmin: ADMIN_EMAILS.includes(user.email.toLowerCase()) } });
 });
@@ -1456,7 +1469,8 @@ app.post("/auth/verify-email-link", { config: { rateLimit: { max: 10, timeWindow
     return reply.status(400).send({ error: "Invalid or expired verification link", code: "INVALID_LINK" });
   }
 
-  if (!user.emailVerified) {
+  const wasJustVerified = !user.emailVerified;
+  if (wasJustVerified) {
     await prisma.user.update({
       where: { id: user.id },
       data: { emailVerified: true, emailVerificationToken: null },
@@ -1465,6 +1479,16 @@ app.post("/auth/verify-email-link", { config: { rateLimit: { max: 10, timeWindow
     await redis.del(`verify:cooldown:${user.id}`);
   }
   await redis.del(`verify:link:${body.token}`);
+
+  if (wasJustVerified && isMailConfigured()) {
+    const webBase = (process.env.WEB_BASE_URL || "").replace(/\/$/, "");
+    sendTransactionalEmail({
+      to: user.email,
+      subject: "Welcome to Gem!",
+      html: `<p>Hi ${user.name},</p><p>Your account is verified. <a href="${webBase}">Start planning</a> your first event with friends.</p>`,
+      text: `Hi ${user.name},\n\nYour Gem account is verified. Head to ${webBase} to start planning events with friends.`,
+    }).catch(() => {});
+  }
 
   const { emailVerified: _ev, ...safeUser } = user;
   const token = await reply.jwtSign({ sub: safeUser.id, email: safeUser.email }, { expiresIn: jwtExpiresIn });
@@ -3908,6 +3932,7 @@ app.patch("/groups/:groupId", async (request, reply) => {
       name: body.name,
       description: body.description,
       avatarUrl: body.avatarUrl,
+      ...(body.statsEnabled !== undefined ? { statsEnabled: body.statsEnabled } : {}),
     },
   });
 
@@ -3920,6 +3945,24 @@ app.patch("/groups/:groupId", async (request, reply) => {
   });
 
   return reply.send({ group });
+});
+
+// DELETE /groups/:groupId/leave — any active member (non-owner) leaves the group
+app.delete("/groups/:groupId/leave", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const params = await validateRequest(groupIdParamsSchema, request.params);
+
+  const membership = await requireGroupMembership(prisma, currentUser.id, params.groupId);
+
+  if (membership.role === "owner") {
+    return reply.status(403).send({ error: "Group owner cannot leave. Transfer ownership or delete the group.", code: "OWNER_CANNOT_LEAVE" });
+  }
+
+  await prisma.membership.delete({
+    where: { userId_groupId: { userId: currentUser.id, groupId: params.groupId } },
+  });
+
+  return reply.status(204).send();
 });
 
 app.delete("/groups/:groupId", async (request, reply) => {
@@ -4448,13 +4491,20 @@ app.get("/groups/:groupId/audit-log", async (request, reply) => {
   return reply.send({ logs });
 });
 
-// GET /groups/:groupId/stats — admin-only group stats (no schema changes needed)
+// GET /groups/:groupId/stats — admins always; members when statsEnabled
 app.get("/groups/:groupId/stats", async (request, reply) => {
   const currentUser = await requireAuth(request, reply, prisma);
   const { groupId } = request.params as { groupId: string };
 
   const membership = await requireGroupMembership(prisma, currentUser.id, groupId);
-  requireRole(membership.role, ["owner", "admin"]);
+  const isAdmin = membership.role === "owner" || membership.role === "admin";
+
+  if (!isAdmin) {
+    const group = await prisma.group.findUnique({ where: { id: groupId }, select: { statsEnabled: true } });
+    if (!group?.statsEnabled) {
+      return reply.status(403).send({ error: "Stats are not enabled for this group", code: "FORBIDDEN" });
+    }
+  }
 
   const [
     totalEvents,
@@ -4543,7 +4593,7 @@ app.get("/users/me", async (request, reply) => {
 
   const user = await prisma.user.findUnique({
     where: { id: currentUser.id },
-    select: { id: true, email: true, name: true, username: true, usernameChangedAt: true, avatarUrl: true, theme: true, createdAt: true },
+    select: { id: true, email: true, name: true, username: true, usernameChangedAt: true, avatarUrl: true, theme: true, showEmail: true, onboardingDone: true, createdAt: true },
   });
 
   const isAdmin = ADMIN_EMAILS.length > 0 && ADMIN_EMAILS.includes(currentUser.email.toLowerCase());
@@ -4556,7 +4606,7 @@ app.get("/users/:username", async (request, reply) => {
 
   const user = await prisma.user.findUnique({
     where: { username },
-    select: { id: true, name: true, username: true, avatarUrl: true, createdAt: true },
+    select: { id: true, name: true, username: true, avatarUrl: true, createdAt: true, showEmail: true, email: true },
   });
 
   if (!user) {
@@ -4573,14 +4623,19 @@ app.get("/users/:username", async (request, reply) => {
       },
     },
     select: {
-      group: { select: { id: true, name: true, avatarUrl: true } },
+      group: { select: { id: true, name: true, avatarUrl: true, statsEnabled: true } },
     },
   });
 
   return reply.send({
     user: {
-      ...user,
-      mutualGroups: mutualMemberships.map((m: { group: { id: string; name: string; avatarUrl: string | null } }) => m.group),
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      avatarUrl: user.avatarUrl,
+      createdAt: user.createdAt,
+      ...(user.showEmail ? { email: user.email } : {}),
+      mutualGroups: mutualMemberships.map((m) => m.group),
     },
   });
 });
@@ -4593,6 +4648,8 @@ app.patch("/users/me", { config: { rateLimit: { max: 10, timeWindow: "1 minute" 
   if (body.name !== undefined) dataToUpdate.name = body.name;
   if (body.avatarUrl !== undefined) dataToUpdate.avatarUrl = body.avatarUrl;
   if (body.theme !== undefined) dataToUpdate.theme = body.theme;
+  if (body.showEmail !== undefined) dataToUpdate.showEmail = body.showEmail;
+  if (body.onboardingDone !== undefined) dataToUpdate.onboardingDone = body.onboardingDone;
 
   // When avatarUrl changes, delete the old S3 object (avatars only — keyed under avatars/)
   if (body.avatarUrl !== undefined) {
@@ -4647,7 +4704,7 @@ app.patch("/users/me", { config: { rateLimit: { max: 10, timeWindow: "1 minute" 
   const user = await prisma.user.update({
     where: { id: currentUser.id },
     data: dataToUpdate,
-    select: { id: true, email: true, name: true, username: true, usernameChangedAt: true, avatarUrl: true, theme: true, createdAt: true },
+    select: { id: true, email: true, name: true, username: true, usernameChangedAt: true, avatarUrl: true, theme: true, showEmail: true, onboardingDone: true, createdAt: true },
   });
 
   return reply.send({ user });

@@ -10,6 +10,7 @@ interface MutualGroup {
   id: string
   name: string
   avatarUrl?: string | null
+  statsEnabled?: boolean
 }
 
 interface UserProfile {
@@ -17,6 +18,7 @@ interface UserProfile {
   name: string
   username: string | null
   avatarUrl: string | null
+  email?: string | null
   createdAt: string
   mutualGroups: MutualGroup[]
 }
@@ -115,6 +117,9 @@ export default function UserProfilePage() {
             <p className="text-indigo-400 text-sm">@{user.username}</p>
           )}
           <p className="text-gray-500 text-xs mt-1">Member since {joinedLabel}</p>
+          {user.email && (
+            <p className="text-gray-400 text-xs mt-0.5">{user.email}</p>
+          )}
 
           {!isOwnProfile && (
             <button
@@ -149,16 +154,29 @@ export default function UserProfilePage() {
         ) : (
           <div className="space-y-2">
             {user.mutualGroups.map((g) => (
-              <Link
-                key={g.id}
-                to={`/groups/${g.id}`}
-                className="flex items-center gap-3 bg-gray-900 border border-gray-800 rounded-xl p-3 hover:border-indigo-600 transition-colors"
-              >
-                <div className="w-9 h-9 rounded-lg bg-indigo-900 flex items-center justify-center text-sm font-bold text-indigo-300 shrink-0">
-                  {g.name[0].toUpperCase()}
-                </div>
-                <span className="text-sm font-medium text-white truncate">{g.name}</span>
-              </Link>
+              <div key={g.id} className="flex items-center gap-2">
+                <Link
+                  to={`/groups/${g.id}`}
+                  className="flex items-center gap-3 flex-1 min-w-0 bg-gray-900 border border-gray-800 rounded-xl p-3 hover:border-indigo-600 transition-colors"
+                >
+                  <div className="w-9 h-9 rounded-lg bg-indigo-900 flex items-center justify-center text-sm font-bold text-indigo-300 shrink-0">
+                    {g.name[0].toUpperCase()}
+                  </div>
+                  <span className="text-sm font-medium text-white truncate">{g.name}</span>
+                </Link>
+                {g.statsEnabled && (
+                  <Link
+                    to={`/groups/${g.id}/stats`}
+                    className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-gray-800 border border-gray-700 text-gray-400 hover:text-indigo-300 hover:border-indigo-700 text-xs transition-colors"
+                    title="View group stats"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                    Stats
+                  </Link>
+                )}
+              </div>
             ))}
           </div>
         )}

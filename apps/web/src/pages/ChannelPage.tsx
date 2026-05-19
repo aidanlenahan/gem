@@ -20,28 +20,50 @@ import Avatar from '../components/Avatar'
 import Spinner from '../components/Spinner'
 import { getApiErrorMessage } from '../lib/api'
 
+const URL_PATTERN = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/gi
+
 function renderContent(
   content: string,
   currentUserId: string,
   members: Array<{ userId: string; username?: string | null }>,
 ) {
-  const parts = content.split(/(@[a-zA-Z0-9_.-]+)/g)
-  return parts.map((part, i) => {
-    const match = part.match(/^@([a-zA-Z0-9_.-]+)$/)
-    if (!match) return <span key={i}>{part}</span>
-    const handle = match[1].toLowerCase()
-    const member = members.find((m) => m.username?.toLowerCase() === handle)
-    if (!member) return <span key={i}>{part}</span>
-    const isMe = member.userId === currentUserId
-    return (
-      <Link
-        key={i}
-        to={`/u/${member.username}`}
-        className={`font-medium ${isMe ? 'text-indigo-300 bg-indigo-900/30 rounded px-0.5' : 'text-indigo-400'} hover:underline`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {part}
-      </Link>
+  // Split on @mentions first, then linkify URLs within plain text segments
+  const mentionParts = content.split(/(@[a-zA-Z0-9_.-]+)/g)
+  return mentionParts.flatMap((part, i) => {
+    const mentionMatch = part.match(/^@([a-zA-Z0-9_.-]+)$/)
+    if (mentionMatch) {
+      const handle = mentionMatch[1].toLowerCase()
+      const member = members.find((m) => m.username?.toLowerCase() === handle)
+      if (!member) return [<span key={`m${i}`}>{part}</span>]
+      const isMe = member.userId === currentUserId
+      return [
+        <Link
+          key={`m${i}`}
+          to={`/u/${member.username}`}
+          className={`font-medium ${isMe ? 'text-indigo-300 bg-indigo-900/30 rounded px-0.5' : 'text-indigo-400'} hover:underline`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {part}
+        </Link>,
+      ]
+    }
+    // Linkify URLs inside plain text
+    const urlParts = part.split(URL_PATTERN)
+    return urlParts.map((sub, j) =>
+      /^https?:\/\//i.test(sub) ? (
+        <a
+          key={`${i}-${j}`}
+          href={sub}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-indigo-400 underline hover:text-indigo-300 break-all"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {sub}
+        </a>
+      ) : (
+        <span key={`${i}-${j}`}>{sub}</span>
+      )
     )
   })
 }

@@ -1,6 +1,6 @@
 ========================================================
 TASKS.TXT — GEM Feature Backlog
-Last updated: 2026-05-18
+Last updated: 2026-05-19
 Format: [x] = done, [ ] = pending, [-] = in progress / partial
 
 Tasks are grouped by the release they target.
@@ -61,6 +61,24 @@ Released: 2026-05-18
     channel name (32), photo caption (280). Enforced in Zod schemas (API) and maxLength
     attrs (frontend). DONE 2026-05-14.
 
+[x] Leave group — Members tab in GroupPage now has "Leave Group" button with confirm step for
+    non-owner members. API: DELETE /groups/:groupId/leave (owner blocked). Navigates to /groups
+    on success. DONE 2026-05-19. Files: server.ts, GroupPage.tsx, useGroups.ts
+
+[x] Stats page toggle — Admin toggle in GroupManagePage (Group Info section) enables/disables
+    stats page for all group members. When enabled: Stats link shows in GroupPage header for all
+    members; GET /groups/:groupId/stats allows all members (not just admin). Schema: Group.statsEnabled.
+    DONE 2026-05-19. Files: schema.prisma, server.ts, GroupPage.tsx, GroupManagePage.tsx, useGroups.ts
+
+[x] Stats link on user profile — Mutual groups with statsEnabled show a "Stats" link button next
+    to the group card on UserProfilePage (/u/:username). API returns statsEnabled on mutual groups.
+    DONE 2026-05-19. Files: server.ts, UserProfilePage.tsx
+
+[x] Email visibility toggle — ProfilePage settings now have a toggle "Show email on profile".
+    When on, other group members can see the user's email on their public profile page. Schema:
+    User.showEmail. DONE 2026-05-19. Files: schema.prisma, server.ts, ProfilePage.tsx,
+    UserProfilePage.tsx, authStore.ts
+
 === v0.9 — Polish & Stability ===
 Target: tighten the core experience before semi-public release; no new major features,
 focus on reliability, UX rough edges, and prep for a small group of external users.
@@ -96,14 +114,20 @@ focus on reliability, UX rough edges, and prep for a small group of external use
 [ ] Waitlist — when maxAttendees is reached, late RSVPs join a waitlist; promote
     automatically when a yes-RSVP withdraws (add status: "waitlist" on RSVP model)
 
-[ ] Event check-in QR code — generate a QR code linking to a one-click RSVP-yes endpoint;
-    display on EventPage for the creator; useful for in-person check-in via phone scan
 
-[ ] isLegendary badge — flag is in schema and API but only shows a crown icon; let admins
+[x] isLegendary badge — flag is in schema and API but only shows a crown icon; let admins
     toggle it on the event edit page; surface legendary events with a highlighted card on GroupPage
+    DONE 2026-05-19: Admin checkbox in EventPage edit form; EventCard list+grid layouts get gold
+    border (amber-700/60) + ★ star prefix on title when isLegendary. Files: EventPage.tsx, EventCard.tsx, GroupPage.tsx
 
 [ ] Event page map embed — when event.location is set, render an embedded static map
     thumbnail (OpenStreetMap tile, no API key needed) above the directions link
+
+[x] Auto-hyperlinking in channel chat — URLs typed in messages automatically become clickable
+    links opening in a new tab. Preserves @mention detection. DONE 2026-05-19. Files: ChannelPage.tsx
+
+[x] Join modal Code/URL tabs — "Join a Group" modal now has Code tab (invite code input) and
+    URL tab (paste full invite link with clipboard paste button). DONE 2026-05-19. Files: GroupsPage.tsx
 
 --- Infrastructure ---
 
@@ -125,14 +149,21 @@ Audience: developers + 1–2 invited external users (friends/family) who get a b
 
 --- Onboarding & first-run ---
 
-[ ] First-run onboarding flow — after registration, show a 3-step tour: create a group,
+[x] First-run onboarding flow — after registration, show a 3-step tour: create a group,
     invite a friend, create your first event; dismissable; stored in User.onboardingDone
+    DONE 2026-05-19: Modal shown on GroupsPage when user has 0 groups and onboardingDone=false;
+    dismiss calls PATCH /users/me { onboardingDone: true }. Schema: User.onboardingDone.
+    Files: schema.prisma, server.ts, GroupsPage.tsx, authStore.ts
 
-[ ] Welcome email — send a formatted welcome email on account creation (uses existing
+[x] Welcome email — send a formatted welcome email on account creation (uses existing
     SMTP pipeline); includes link to Help page and contact address
+    DONE 2026-05-19: Sent after email verification (both OTP and link paths) via sendTransactionalEmail.
+    Only fires when isMailConfigured(). Files: server.ts
 
-[ ] Better empty state on GroupsPage for brand-new users — prompt to create first group
+[x] Better empty state on GroupsPage for brand-new users — prompt to create first group
     with a clear CTA button when the user has no groups
+    DONE 2026-05-19: 3-step illustrated welcome layout with icon, heading, numbered steps,
+    and Join/Create buttons when data.groups is empty. Files: GroupsPage.tsx
 
 --- Reliability & quality gate ---
 

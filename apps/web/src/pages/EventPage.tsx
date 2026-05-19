@@ -189,6 +189,7 @@ export default function EventPage() {
     document.head.appendChild(script)
   }, [showEditModal])
   const [editIsPrivate, setEditIsPrivate] = useState(false)
+  const [editIsLegendary, setEditIsLegendary] = useState(false)
 
   const event = eventResponse?.event
   const isAdmin = eventResponse?.isAdmin ?? false
@@ -260,6 +261,7 @@ export default function EventPage() {
     setEditLocation(event.location ?? '')
     setEditMaxAttendees(event.maxAttendees != null ? String(event.maxAttendees) : '')
     setEditIsPrivate(event.isPrivate ?? false)
+    setEditIsLegendary(event.isLegendary ?? false)
     setShowEditModal(true)
   }
 
@@ -308,6 +310,7 @@ export default function EventPage() {
         location: editLocation || undefined,
         maxAttendees: editMaxAttendees ? Number(editMaxAttendees) : undefined,
         isPrivate: editIsPrivate,
+        isLegendary: editIsLegendary,
         tagIds: editTagIds,
       })
       toast.success('Event updated')
@@ -683,6 +686,21 @@ export default function EventPage() {
                   Private event (invite-only)
                 </label>
               </div>
+              {isAdmin && (
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="editIsLegendary"
+                    checked={editIsLegendary}
+                    onChange={(e) => setEditIsLegendary(e.target.checked)}
+                    className="w-4 h-4 rounded bg-gray-800 border-gray-700 text-amber-500 focus:ring-amber-500"
+                  />
+                  <label htmlFor="editIsLegendary" className="text-sm text-gray-300 flex items-center gap-1.5">
+                    <span>Legendary event</span>
+                    <span className="text-amber-400 text-xs">★</span>
+                  </label>
+                </div>
+              )}
               {groupTagsData?.tags && groupTagsData.tags.length > 0 && (
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">Tags ({editTagIds.length}/{MAX_EVENT_TAGS})</label>
