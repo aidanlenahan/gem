@@ -17,7 +17,7 @@ type GroupMembersResponse = {
     userId: string
     name: string
     username?: string | null
-    email: string
+    email?: string | null
     avatarUrl?: string | null
     role: 'owner' | 'admin' | 'member'
     status: 'active' | 'pending'
