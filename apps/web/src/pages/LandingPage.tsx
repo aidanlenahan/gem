@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 
@@ -60,6 +61,10 @@ const features = [
 
 export default function LandingPage() {
   const { token } = useAuthStore()
+
+  useEffect(() => {
+    document.title = 'GEM — Group Event Manager'
+  }, [])
 
   return (
     <div>

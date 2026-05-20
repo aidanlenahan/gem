@@ -8,9 +8,9 @@ All tasks — completed and pending. Completed entries from `tasks.txt` are incl
 - [ ] Step 15: Uptime Kuma rollout
 - [ ] Step 16: PBS backup integration + restore test
 ================
-- temporary channel chats? expire after one week? or add 'load more' button after so many messages once scrolled all the way up on mobile to prevent accidental scroll all the way up and improve channel loading time?
-- private chats non admins able to see members
-- more protections against destructive actions (deleting group, channel, etc.)
+- [x] channel chat load-more / performance — already implemented: 50-msg cursor pagination + "Load older messages" button (useInfiniteQuery + before= cursor). DONE 2026-05-20
+- [x] private channel members visible to non-admins — subscribers of invite-only channels can now view the member list (read-only); admins retain full add/remove access. API: opened GET /groups/:groupId/channels/:channelId/subscribers to channel subscribers. UI: members button in channel header, modal adapts to role. DONE 2026-05-20. Files: server.ts, ChannelPage.tsx
+- [x] more protections against destructive actions — message delete now requires confirmation: desktop shows inline Confirm?/✕ in hover bar; mobile action sheet opens a confirm modal before deleting. DONE 2026-05-20. Files: ChannelPage.tsx
 - end to end encrypted chats?
 - add reply function to 'slide right' action on mobile
 - confirm message pin functionality
@@ -18,6 +18,8 @@ All tasks — completed and pending. Completed entries from `tasks.txt` are incl
 - 'mention' all subscribers to a tag with '#', same functionality as '@' mentions
 - users can add short bio
 - auto hyperlink links (all open in new tab)
+
+- make title of each page have accurate heading to page
 
 =================
 ## Channel chat — implementation checklist

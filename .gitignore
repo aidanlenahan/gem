@@ -1,3 +1,6 @@
+# Admin/ops scripts (not for version control)
+dev.sh
+
 # Local scratch files
 tmp/
 notes.md

@@ -192,6 +192,12 @@ export default function EventPage() {
 
   const event = eventResponse?.event
   const isAdmin = eventResponse?.isAdmin ?? false
+
+  useEffect(() => {
+    if (!event?.title) return
+    document.title = `${event.title} — GEM`
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [event?.title])
   const isCreator = eventResponse?.isCreator ?? false
   const canInvite = isAdmin || isCreator
 

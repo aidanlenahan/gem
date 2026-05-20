@@ -394,6 +394,12 @@ export default function GroupPage() {
 
   const group = groupData?.group
 
+  useEffect(() => {
+    if (!group?.name) return
+    document.title = `${group.name} — GEM`
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [group?.name])
+
   if (groupError && !group) {
     return (
       <div className="flex flex-col items-center py-16 gap-3 text-gray-400">

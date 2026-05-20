@@ -121,6 +121,13 @@ export default function GroupManagePage() {
 
   // Group info edit state
   const group = groupData?.group
+
+  useEffect(() => {
+    if (!group?.name) return
+    document.title = `Manage ${group.name} — GEM`
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [group?.name])
+
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [infoSaving, setInfoSaving] = useState(false)

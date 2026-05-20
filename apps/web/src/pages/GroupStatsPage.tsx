@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '../lib/api'
@@ -37,6 +38,12 @@ function StatCard({ label, value, sub }: { label: string; value: string | number
 export default function GroupStatsPage() {
   const { groupId } = useParams<{ groupId: string }>()
   const { data: groupData } = useGroup(groupId!)
+
+  useEffect(() => {
+    if (!groupData?.group?.name) return
+    document.title = `${groupData.group.name} Stats — GEM`
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [groupData?.group?.name])
 
   const { data, isLoading, isError, refetch } = useQuery<GroupStats>({
     queryKey: ['groups', groupId, 'stats'],

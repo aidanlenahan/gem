@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 
@@ -11,6 +11,11 @@ type RegisterResponse = {
 const PASSWORD_RULES = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/
 
 export default function RegisterPage() {
+  useEffect(() => {
+    document.title = 'Sign Up — GEM'
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [])
+
   const [searchParams] = useSearchParams()
   const inviteToken = searchParams.get('ref') ?? ''
 

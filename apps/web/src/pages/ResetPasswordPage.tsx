@@ -1,10 +1,15 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 
 const PASSWORD_RULES = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/
 
 export default function ResetPasswordPage() {
+  useEffect(() => {
+    document.title = 'Reset Password — GEM'
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [])
+
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token') ?? ''
   const navigate = useNavigate()

@@ -1,4 +1,11 @@
+import { useEffect } from 'react'
+
 export default function ContactPage() {
+  useEffect(() => {
+    document.title = 'Contact — GEM'
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [])
+
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16">
       <div className="mb-10 text-center">

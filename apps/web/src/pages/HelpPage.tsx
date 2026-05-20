@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { helpArticles } from '../lib/helpArticles'
 
@@ -88,6 +88,11 @@ function FaqAccordion() {
 }
 
 export default function HelpPage() {
+  useEffect(() => {
+    document.title = 'Help — GEM'
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [])
+
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16">
       <div className="mb-12 text-center">

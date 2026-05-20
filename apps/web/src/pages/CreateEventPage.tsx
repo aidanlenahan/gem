@@ -23,6 +23,11 @@ type PrefillState = {
 const MAX_EVENT_TAGS = 3
 
 export default function CreateEventPage() {
+  useEffect(() => {
+    document.title = 'New Event — GEM'
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [])
+
   const { groupId } = useParams<{ groupId: string }>()
   const navigate = useNavigate()
   const { state } = useLocation()

@@ -248,6 +248,12 @@ export default function ChannelPage() {
   const { data: channelsData } = useGroupChannels(groupId!)
   const channel = channelsData?.channels.find((c) => c.id === channelId)
 
+  useEffect(() => {
+    if (!channel?.name) return
+    document.title = `#${channel.name} — GEM`
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [channel?.name])
+
   const { data: membersData } = useGroupMembers(groupId!)
   const myMembership = membersData?.members.find((m) => m.userId === currentUser?.id)
   const isAdminOrOwner = myMembership?.role === 'owner' || myMembership?.role === 'admin'
@@ -298,6 +304,9 @@ export default function ChannelPage() {
 
   // Subscriber management modal
   const [manageSubscribersChannelId, setManageSubscribersChannelId] = useState<string | null>(null)
+
+  // Message delete confirmation
+  const [confirmDeleteMessageId, setConfirmDeleteMessageId] = useState<string | null>(null)
 
   // Mobile: long-press action sheet
   const [actionSheetMessageId, setActionSheetMessageId] = useState<string | null>(null)
@@ -719,11 +728,25 @@ export default function ChannelPage() {
             {channel?.name ?? 'Channel'}
           </h1>
           {channel?.isInviteOnly && (
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-gray-500 shrink-0" aria-label="Invite-only channel">
-              <title>Invite-only channel</title>
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-            </svg>
+            <>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-gray-500 shrink-0" aria-label="Invite-only channel">
+                <title>Invite-only channel</title>
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              {channel.isSubscribed && (
+                <button
+                  onClick={() => setManageSubscribersChannelId(channelId!)}
+                  className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                  title="View members"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <span>{channel.subscriberCount}</span>
+                </button>
+              )}
+            </>
           )}
           <div className="ml-auto flex items-center gap-2">
             {pinnedMessages.length > 0 && (
@@ -870,15 +893,29 @@ export default function ChannelPage() {
                     </button>
                   )}
                   {canDelete && (
-                    <button
-                      onClick={() => void handleDeleteMessage(msg.id)}
-                      className="p-1 rounded text-gray-500 hover:text-red-400 hover:bg-gray-800 transition-colors"
-                      title="Delete message"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
+                    confirmDeleteMessageId === msg.id
+                      ? <>
+                          <button
+                            onClick={() => { void handleDeleteMessage(msg.id); setConfirmDeleteMessageId(null) }}
+                            className="px-1.5 py-0.5 rounded text-xs font-medium text-red-300 bg-red-900/60 hover:bg-red-800 transition-colors"
+                          >
+                            Confirm?
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteMessageId(null)}
+                            className="p-1 rounded text-gray-500 hover:text-gray-300 hover:bg-gray-800 transition-colors text-xs"
+                            title="Cancel"
+                          >✕</button>
+                        </>
+                      : <button
+                          onClick={() => setConfirmDeleteMessageId(msg.id)}
+                          className="p-1 rounded text-gray-500 hover:text-red-400 hover:bg-gray-800 transition-colors"
+                          title="Delete message"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
                   )}
                 </div>
               )
@@ -1171,6 +1208,33 @@ export default function ChannelPage() {
         )
       })()}
 
+      {/* Delete Message Confirmation */}
+      {confirmDeleteMessageId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-gray-900 rounded-2xl shadow-2xl w-full max-w-sm p-6 border border-gray-700 space-y-4">
+            <h2 className="text-lg font-bold text-white">Delete message?</h2>
+            <p className="text-sm text-gray-400">This cannot be undone.</p>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteMessageId(null)}
+                className="px-4 py-2 rounded-xl text-sm text-gray-400 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => { void handleDeleteMessage(confirmDeleteMessageId); setConfirmDeleteMessageId(null) }}
+                disabled={deleteMessage.isPending}
+                className="px-4 py-2 bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white rounded-xl text-sm font-medium transition-colors"
+              >
+                {deleteMessage.isPending ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Channel Tag Assignment Modal */}
       {showTagModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
@@ -1300,7 +1364,7 @@ export default function ChannelPage() {
               )}
               {!actionSheetMessage.deleted && !actionSheetMessage.pending && actionSheetMessage.userId === currentUser?.id && (
                 <button
-                  onClick={() => { void handleDeleteMessage(actionSheetMessage.id); setActionSheetMessageId(null) }}
+                  onClick={() => { setConfirmDeleteMessageId(actionSheetMessage.id); setActionSheetMessageId(null) }}
                   className="flex items-center gap-3 w-full px-5 py-3.5 text-sm text-red-400 active:bg-gray-800"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -1391,6 +1455,7 @@ export default function ChannelPage() {
           channelId={manageSubscribersChannelId}
           channelName={channelsData?.channels.find((c) => c.id === manageSubscribersChannelId)?.name ?? ''}
           groupMembers={membersData?.members ?? []}
+          isAdmin={isAdminOrOwner}
           onClose={() => setManageSubscribersChannelId(null)}
         />
       )}
@@ -1403,12 +1468,14 @@ function ManageSubscribersModal({
   channelId,
   channelName,
   groupMembers,
+  isAdmin,
   onClose,
 }: {
   groupId: string
   channelId: string
   channelName: string
   groupMembers: Array<{ userId: string; name: string; email: string; avatarUrl?: string | null; role: string; status: string }>
+  isAdmin: boolean
   onClose: () => void
 }) {
   const toast = useToast()
@@ -1418,7 +1485,10 @@ function ManageSubscribersModal({
 
   const subscribers = data?.subscribers ?? []
   const subscriberIds = new Set(subscribers.map((s) => s.id))
-  const activeMembers = groupMembers.filter((m) => m.status === 'active')
+  // Admins see all active members (to add/remove). Non-admins see only current subscribers.
+  const displayMembers = isAdmin
+    ? groupMembers.filter((m) => m.status === 'active')
+    : groupMembers.filter((m) => subscriberIds.has(m.userId))
 
   const handleAdd = async (userId: string) => {
     try {
@@ -1447,14 +1517,14 @@ function ManageSubscribersModal({
             </svg>
           </button>
         </div>
-        <p className="text-sm text-gray-400">
-          Control who has access to this invite-only channel.
-        </p>
+        {isAdmin && (
+          <p className="text-sm text-gray-400">Control who has access to this invite-only channel.</p>
+        )}
         {isLoading ? (
           <div className="flex justify-center py-4"><Spinner className="text-indigo-400" /></div>
         ) : (
           <div className="space-y-2 max-h-80 overflow-y-auto">
-            {activeMembers.map((member) => {
+            {displayMembers.map((member) => {
               const isSubscribed = subscriberIds.has(member.userId)
               const isPending = addSubscriber.isPending || removeSubscriber.isPending
               return (
@@ -1462,19 +1532,20 @@ function ManageSubscribersModal({
                   <Avatar name={member.name} avatarUrl={member.avatarUrl ?? undefined} size="sm" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-white truncate">{member.name}</p>
-                    {member.email && <p className="text-xs text-gray-500 truncate">{member.email}</p>}
                   </div>
-                  <button
-                    onClick={() => void (isSubscribed ? handleRemove(member.userId) : handleAdd(member.userId))}
-                    disabled={isPending}
-                    className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors disabled:opacity-50 ${
-                      isSubscribed
-                        ? 'bg-gray-700 text-gray-300 hover:bg-red-900 hover:text-red-300'
-                        : 'bg-indigo-700 text-indigo-100 hover:bg-indigo-600'
-                    }`}
-                  >
-                    {isSubscribed ? 'Remove' : 'Add'}
-                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => void (isSubscribed ? handleRemove(member.userId) : handleAdd(member.userId))}
+                      disabled={isPending}
+                      className={`text-xs px-3 py-1 rounded-lg font-medium transition-colors disabled:opacity-50 ${
+                        isSubscribed
+                          ? 'bg-gray-700 text-gray-300 hover:bg-red-900 hover:text-red-300'
+                          : 'bg-indigo-700 text-indigo-100 hover:bg-indigo-600'
+                      }`}
+                    >
+                      {isSubscribed ? 'Remove' : 'Add'}
+                    </button>
+                  )}
                 </div>
               )
             })}

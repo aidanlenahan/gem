@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { resolveApiBaseUrl } from '../lib/api'
 
@@ -35,6 +35,9 @@ const releases: Release[] = [
       { type: 'new', text: 'Welcome email — a welcome email is sent after email verification to help new members get started' },
       { type: 'new', text: 'First-run onboarding — new users with no groups see a guided modal walking through creating a group, inviting friends, and planning a first event' },
       { type: 'improved', text: 'Empty state on the Groups page — brand-new users see a welcoming 3-step illustration instead of a blank page' },
+      { type: 'improved', text: 'Private channel member list — members of an invite-only channel can now see who else is in it; a member count button appears in the channel header for all subscribers, not just admins' },
+      { type: 'improved', text: 'Message delete confirmation — deleting your own message now requires a confirmation step; desktop shows an inline Confirm/Cancel prompt; mobile shows a confirmation modal before the delete fires' },
+      { type: 'improved', text: 'Browser tab titles — every page now sets an accurate title (e.g. "The Crew — GEM", "#general — GEM", "Settings — GEM") so browser history and tab switching are easier' },
     ],
   },
   {
@@ -338,6 +341,11 @@ function ReleaseRow({ release, isCurrent = false }: { release: Release; isCurren
 }
 
 export default function UpdatesPage() {
+  useEffect(() => {
+    document.title = "What's New — GEM"
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [])
+
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-16">
       {/* Header */}
