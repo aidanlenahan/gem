@@ -306,7 +306,7 @@ export default function GroupsPage() {
           <p className="text-gray-400 text-sm mb-5">Your private space for friends to plan events and stay connected.</p>
           <div className="space-y-2 text-left mb-5">
             {([
-              { n: '1', label: 'Create a group', desc: 'Make a private space for your friend circle' },
+              { n: '1', label: 'Join a group', desc: 'Enter an invite code to join your friend circle' },
               { n: '2', label: 'Invite your friends', desc: 'Share a link or invite code — no signup spam' },
               { n: '3', label: 'Plan events together', desc: 'Create events, RSVP, and chat in one place' },
             ] as const).map(({ n, label, desc }) => (
@@ -329,10 +329,10 @@ export default function GroupsPage() {
             </button>
             <button
               type="button"
-              onClick={() => { handleDismissOnboarding(); setShowModal(true) }}
+              onClick={() => { handleDismissOnboarding(); setShowJoinModal(true); setJoinTab('code'); setJoinError(''); setJoinUrlError(''); setJoinSuccess(''); setJoinCode(''); setJoinUrl('') }}
               className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors"
             >
-              Create a Group
+              Join a Group
             </button>
           </div>
         </div>

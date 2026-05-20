@@ -8,6 +8,107 @@ export interface HelpArticle {
 
 export const helpArticles: HelpArticle[] = [
   {
+    slug: 'getting-started',
+    title: 'Getting started with GEM',
+    body: (
+      <>
+        <p>GEM is a private space for close friend groups — no public feeds, no strangers. Here's how to go from zero to planning in a few minutes.</p>
+        <p className="font-medium text-gray-200 mt-3">Step 1 — Join a group</p>
+        <p className="mt-1">If a friend invited you, tap the invite link they shared or open GEM, tap <strong>Join a Group</strong>, and enter the invite code. You'll be added as a member instantly.</p>
+        <p className="font-medium text-gray-200 mt-3">Step 2 — Or create your own group</p>
+        <ol className="list-decimal list-inside space-y-1 mt-1">
+          <li>Tap <strong>Create a Group</strong> from the home screen.</li>
+          <li>Give your group a name (e.g. "The Crew" or "Book Club").</li>
+          <li>Copy the invite link or code and share it with your friends.</li>
+        </ol>
+        <p className="font-medium text-gray-200 mt-3">Step 3 — Explore your group</p>
+        <p className="mt-1">Once you're in a group you'll see three tabs: <strong>Events</strong>, <strong>Channels</strong>, and <strong>Members</strong>. Create an event, join a channel, or invite more people from the Members tab.</p>
+        <p className="mt-3 text-gray-500 text-xs">Need help? Email us at help@gem.aidanlenahan.com or visit the Contact page.</p>
+      </>
+    ),
+  },
+  {
+    slug: 'create-event',
+    title: 'Create and manage events',
+    body: (
+      <>
+        <p>Events are the core of Gem — a place to coordinate plans, collect RSVPs, and keep the conversation in one spot.</p>
+        <p className="font-medium text-gray-200 mt-3">Creating an event</p>
+        <ol className="list-decimal list-inside space-y-1 mt-1">
+          <li>Open your group and go to the <strong>Events</strong> tab.</li>
+          <li>Tap the <strong>+</strong> button in the top right.</li>
+          <li>Fill in a name, date, time, and optional location or description.</li>
+          <li>Tap <strong>Create</strong>. All group members will see the event immediately.</li>
+        </ol>
+        <p className="font-medium text-gray-200 mt-3">RSVPs</p>
+        <p className="mt-1">Open an event and tap <strong>Going</strong>, <strong>Maybe</strong>, or <strong>Not going</strong>. You can change your RSVP at any time. Admins can see a full RSVP list from the event page.</p>
+        <p className="font-medium text-gray-200 mt-3">Event chat</p>
+        <p className="mt-1">Each event has its own chat thread. Use it to share details, directions, or last-minute changes — it stays attached to the event so nothing gets lost.</p>
+        <p className="font-medium text-gray-200 mt-3">Legendary events</p>
+        <p className="mt-1">Admins can mark special events as <strong>Legendary</strong>. These are highlighted in the events list and preserved as group memories.</p>
+        <p className="mt-3 text-gray-500 text-xs">Events sync to your calendar app via ICS — see <em>Subscribe your calendar to a group</em> for setup instructions.</p>
+      </>
+    ),
+  },
+  {
+    slug: 'chat',
+    title: 'Chat with your friends',
+    body: (
+      <>
+        <p>Gem has two types of chat: <strong>Channels</strong> (topic-based, persistent rooms) and <strong>Event chat</strong> (tied to a specific event).</p>
+        <p className="font-medium text-gray-200 mt-3">Channels</p>
+        <p className="mt-1">Channels live in your group's <strong>Channels</strong> tab. They're great for ongoing conversations — #general, #planning, #random. Join any open channel by tapping <strong>Join</strong>. Admins can create new channels and make them invite-only if needed.</p>
+        <p className="font-medium text-gray-200 mt-3">Event chat</p>
+        <p className="mt-1">Open any event and scroll down to find its chat thread. This is the best place for event-specific coordination.</p>
+        <p className="font-medium text-gray-200 mt-3">Message features</p>
+        <ul className="list-disc list-inside space-y-1 mt-1">
+          <li>Tap and hold (or swipe right on mobile) to react, reply, pin, edit, or delete a message.</li>
+          <li>Inline replies quote the original message so threads stay clear.</li>
+          <li>Pinned messages appear at the top of the channel.</li>
+          <li>An unread dot on a channel means there are new messages since your last visit.</li>
+        </ul>
+        <p className="mt-3 text-gray-500 text-xs">For more detail on channels specifically, see <em>Using channels</em>.</p>
+      </>
+    ),
+  },
+  {
+    slug: 'updates',
+    title: "What's new — seeing GEM updates",
+    body: (
+      <>
+        <p>The Gem team ships updates regularly. Here's how to stay in the loop.</p>
+        <p className="font-medium text-gray-200 mt-3">Updates page</p>
+        <p className="mt-1">Visit <strong>/updates</strong> (tap the menu and choose <strong>What's New</strong>) for a full changelog of every version — new features, improvements, and fixes, listed newest first.</p>
+        <p className="font-medium text-gray-200 mt-3">Version numbers</p>
+        <p className="mt-1">Gem uses simple version numbers like v0.9. Each release page describes exactly what changed so you know what's new without having to go hunting.</p>
+        <p className="font-medium text-gray-200 mt-3">Stay notified</p>
+        <p className="mt-1">Enable push notifications (see <em>Enable push notifications</em>) to receive alerts for new events and messages. Major Gem updates may also be announced via email.</p>
+        <p className="mt-3 text-gray-500 text-xs">Have a feature request? Let us know at help@gem.aidanlenahan.com — we read everything.</p>
+      </>
+    ),
+  },
+  {
+    slug: 'get-help',
+    title: 'Getting help and contacting support',
+    body: (
+      <>
+        <p>If you're stuck, something looks wrong, or you just have a question — here's how to get help.</p>
+        <p className="font-medium text-gray-200 mt-3">Help center</p>
+        <p className="mt-1">You're already here! Browse the how-to guides on this page for step-by-step instructions on all major features. The FAQ section covers common questions about accounts, privacy, and pricing.</p>
+        <p className="font-medium text-gray-200 mt-3">Contact us</p>
+        <p className="mt-1">For anything not covered here — bugs, account issues, feedback, or general questions — reach out directly:</p>
+        <ul className="list-disc list-inside space-y-1 mt-2">
+          <li>Visit the <strong>Contact</strong> page from the menu</li>
+          <li>Email <strong>help@gem.aidanlenahan.com</strong></li>
+        </ul>
+        <p className="mt-3">We're a small team and read every message. You'll usually hear back within a day or two.</p>
+        <p className="font-medium text-gray-200 mt-3">Reporting a bug</p>
+        <p className="mt-1">When reporting a bug, it helps to include: what you were doing, what you expected to happen, and what actually happened. Screenshots or screen recordings are always welcome.</p>
+        <p className="mt-3 text-gray-500 text-xs">Gem is in active development. If something feels off, it might be a known issue we're already working on — don't hesitate to ask.</p>
+      </>
+    ),
+  },
+  {
     slug: 'install',
     title: 'Install GEM on your phone',
     body: (
