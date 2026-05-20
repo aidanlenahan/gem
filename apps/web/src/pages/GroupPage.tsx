@@ -51,7 +51,6 @@ type EventSummary = {
   endsAt?: string | null
   location?: string | null
   isPrivate?: boolean
-  isLegendary?: boolean
   tags?: Array<{ id: string; name: string; color?: string | null }>
   rsvps?: Array<{ status: string }>
 }

@@ -3,7 +3,7 @@
 All tasks — completed and pending. Completed entries from `tasks.txt` are included here for reference.
 
 ## Launch checklist
-- [ ] Step 13: External end-to-end validation from non-origin device (mobile data + separate network laptop)
+- [x] Step 13: External end-to-end validation from non-origin device (mobile data + separate network laptop)
 - [ ] Step 14: Reboot persistence verification
 - [ ] Step 15: Uptime Kuma rollout
 - [ ] Step 16: PBS backup integration + restore test
@@ -67,9 +67,7 @@ All tasks — completed and pending. Completed entries from `tasks.txt` are incl
     - [x] fix scroll/window issues
 
 ### Later / stretch
-- [ ] @mention system — parse `@name` in message content, notify the mentioned user
-- [ ] Message search — `GET /groups/:groupId/channels/:channelId/messages?q=` full-text search
-- [ ] File / image attachments in channel messages
+- [x] @mention system — parse `@name` in message content, notify the mentioned user
 =====================
 ## App — pending
 - [ ] Google Calendar URL subscription shows feed as a separate calendar ("Other calendars" in sidebar, separate column in day view).
@@ -82,7 +80,6 @@ All tasks — completed and pending. Completed entries from `tasks.txt` are incl
 - [ ] add accent color setting per user
 - [x] media upload
     - [x] fix media upload with storage limits per user
-- [ ] implement dev email (Mailpit or MailHog for local SMTP capture)
 - [ ] recurring events (RRULE support, recurrenceRule on Event model)
 - [ ] fix sizing of event creation page on mobile
 - [x] on pages external of the app (so like /home, /contact, /help pages), top right hover dropdown hangs for 200ms when hover off
@@ -91,8 +88,7 @@ All tasks — completed and pending. Completed entries from `tasks.txt` are incl
 - [x] in channel chat, make 'invite only' badge into the lock glyph, same glyph as the private event glyph
 - [/] add reply to a message functionality in message actions
 - [x] docs/release notes/help articles? patch notes? versions? github link?
-- [ ] specify which user sent message in notifications
-- [ ] make sure safe for git commit and push
+- [x] specify which user sent message in notifications
 - [ ] text sizing/accessibility features
 - [x] add verbose exif metadata to uploaded media
 - [x] add media tab to group page sorted by date with same info on it in event page info button
@@ -107,27 +103,19 @@ All tasks — completed and pending. Completed entries from `tasks.txt` are incl
 ## Suggested features
 
 ### Events
-- [ ] Event reminders — `scheduleEventStartNotification` is wired and queued but never called on event create/update; hook it in so RSVP-yes members get a push/email N minutes before start (configurable per-user: 15 min, 1 hr, 1 day)
+- [x] Event reminders — `scheduleEventStartNotification` is wired and queued but never called on event create/update; hook it in so RSVP-yes members get a push/email N minutes before start (configurable per-user: 15 min, 1 hr, 1 day)
 - [ ] Waitlist — when `maxAttendees` is reached, late RSVPs join a waitlist; promote automatically when a yes-RSVP withdraws (schema field `status: "waitlist"` on RSVP, or a separate table)
-- [ ] Event comments / discussion thread — the `Message` model already has an `eventId` foreign key and the relation is in the schema; wire up a simple threaded comment feed on EventPage (separate from the removed event chat — no socket needed, just paginated REST)
-- [ ] Duplicate / copy event — button on EventPage (admin/creator only) that pre-fills CreateEventPage with all fields from the current event, letting the user adjust date and save as new
-- [ ] Event check-in QR code — generate a QR code linking to a one-click RSVP-yes endpoint; display it on EventPage for the creator; useful for in-person check-in via phone scan
-- [ ] `isLegendary` badge — the flag is in the schema and returned by the API but only shown as a crown icon; let admins toggle it on the event edit modal and surface legendary events highlighted on GroupPage
+- [x] Duplicate / copy event — button on EventPage (admin/creator only) that pre-fills CreateEventPage with all fields from the current event, letting the user adjust date and save as new
 
 ### Channels & messaging
-- [ ] Long-press context menu on mobile — currently no way to pin/delete messages on touch devices; a long-press (300 ms) should show a bottom-sheet action menu (reply, pin, delete, copy text)
 - [x] @mention notifications — parse `@username` in message content on send; resolve to a userId; emit an in-app notification to that user with a link to the message
-- [ ] Message search — `GET /groups/:groupId/channels/:channelId/messages?q=` full-text search (Postgres `ILIKE` or `to_tsvector`) with a search bar in the channel header
-- [ ] Channel message attachments — allow posting images directly in channel chat (reuse the existing upload pipeline; store with `channelId` instead of `eventId` on `MediaAsset` or a new `ChannelMedia` table)
 - [ ] Thread replies — reply to a specific message; collapse into a "3 replies" indicator; schema: add `parentMessageId` FK on `Message`
 
 ### Groups & members
-- [ ] Member directory / search — a searchable list of all active members in a group with their avatar, name, username, and join date; accessible from GroupPage
 - [x] Group stats page — for admins: total events, total RSVPs, most active members, storage used, top tags; all computable from existing data with no schema changes — DONE 2026-05-14: GET /groups/:groupId/stats (admin-only), GroupStatsPage.tsx, linked from GroupManagePage
-- [ ] Bulk member import — admin uploads a CSV of emails; sends invite emails to each; useful for migrating an existing group
 
 ### Notifications & preferences
-- [ ] Customisable reminder timing — per-user setting for how far in advance `event_start` push/email fires (15 min / 1 hr / 1 day / none); stored as a new `UserNotificationPreference` row with `type = "event_start_offset"`
+- [x] Customisable reminder timing — per-user setting for how far in advance `event_start` push/email fires (15 min / 1 hr / 1 day / none); stored as a new `UserNotificationPreference` row with `type = "event_start_offset"`
 - [ ] Digest emails — daily or weekly email summarising upcoming events the user is RSVP-yes on; scheduled via BullMQ repeatable job
 - [ ] In-app notification grouping — the NotificationsPage shows one row per event; group consecutive notifications of the same type for the same event (e.g. "5 people RSVPed to your event")
 
@@ -139,8 +127,7 @@ All tasks — completed and pending. Completed entries from `tasks.txt` are incl
 ### UX / polish
 - [x] Accent colour per user — already in todo; `User.theme` is a string so it can carry `"dark:indigo"` or similar; render as CSS custom property on the root element
 - [ ] Keyboard shortcut help modal — `?` key opens an overlay listing all keyboard shortcuts (arrow nav in lightbox, Escape, etc.)
-- [ ] Empty-state illustrations — replace plain text "No events yet" / "No media" placeholders with simple SVG spot illustrations
-- [ ] Offline queue for RSVPs — when the user RSVPs while offline, queue the action in `localStorage` and replay on reconnect (extends the existing `useIsOnline` hook)
+- [x] Empty-state illustrations — replace plain text "No events yet" / "No media" placeholders with simple SVG spot illustrations
 - [ ] Event page map embed — when `event.location` is set, show an embedded static map thumbnail (Google Maps Static API or OpenStreetMap tile) above the Google/Apple/Waze links
 
 

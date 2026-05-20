@@ -105,6 +105,7 @@ export function createChatServer(
     channelId: string;
     groupId: string;
     userId: string;
+    name: string;
     username: string | null;
     content: string;
   }) => Promise<void>
@@ -269,6 +270,7 @@ export function createChatServer(
             channelId,
             groupId: channel.groupId,
             userId: user.id,
+            name: user.name,
             username: user.username ?? null,
             content: message.content,
           });

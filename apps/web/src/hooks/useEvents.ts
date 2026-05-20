@@ -13,7 +13,6 @@ export type EventRecord = {
   location?: string | null
   isPrivate?: boolean
   maxAttendees?: number | null
-  isLegendary?: boolean
   avgRating?: number | null
   myRating?: number | null
   ratingCount?: number
