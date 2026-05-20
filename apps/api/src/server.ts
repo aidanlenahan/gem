@@ -769,6 +769,7 @@ const groupMemberRemoveParamsSchema = z.object({
 const updateUserBodySchema = z.object({
   name: z.string().min(1).max(255).optional(),
   username: z.string().min(2).max(40).regex(/^[a-zA-Z0-9_]+$/).optional(),
+  bio: z.string().max(200).nullable().optional(),
   avatarUrl: z.string().url().nullable().optional(),
   showEmail: z.boolean().optional(),
   onboardingDone: z.boolean().optional(),
@@ -897,6 +898,45 @@ async function parseMentionedUsers(
     select: { id: true, username: true },
   });
   return users.filter((u): u is { id: string; username: string } => u.username !== null);
+}
+
+async function parseTagMentions(
+  content: string,
+  groupId: string,
+  excludeUserId: string
+): Promise<{ tagId: string; tagName: string; recipientIds: string[] }[]> {
+  const names = [...new Set(
+    [...content.matchAll(/#([a-zA-Z0-9_-]+)/g)].map((m) => m[1])
+  )];
+  if (names.length === 0) return [];
+
+  const tags = await prisma.tag.findMany({
+    where: { groupId, name: { in: names, mode: "insensitive" } },
+    select: { id: true, name: true },
+  });
+  if (tags.length === 0) return [];
+
+  const results: { tagId: string; tagName: string; recipientIds: string[] }[] = [];
+  for (const tag of tags) {
+    // Active members who haven't opted out of this tag
+    const memberships = await prisma.membership.findMany({
+      where: {
+        groupId,
+        status: "active",
+        userId: { not: excludeUserId },
+        user: {
+          userTagPrefs: {
+            none: { tagId: tag.id, subscribed: false },
+          },
+        },
+      },
+      select: { userId: true },
+    });
+    if (memberships.length > 0) {
+      results.push({ tagId: tag.id, tagName: tag.name, recipientIds: memberships.map((m) => m.userId) });
+    }
+  }
+  return results;
 }
 
 const REMINDER_OFFSETS_MINUTES = [15, 60, 1440] as const;
@@ -4722,7 +4762,7 @@ app.get("/users/:username", async (request, reply) => {
 
   const user = await prisma.user.findUnique({
     where: { username },
-    select: { id: true, name: true, username: true, avatarUrl: true, createdAt: true, showEmail: true, email: true },
+    select: { id: true, name: true, username: true, bio: true, avatarUrl: true, createdAt: true, showEmail: true, email: true },
   });
 
   if (!user) {
@@ -4748,6 +4788,7 @@ app.get("/users/:username", async (request, reply) => {
       id: user.id,
       name: user.name,
       username: user.username,
+      bio: user.bio,
       avatarUrl: user.avatarUrl,
       createdAt: user.createdAt,
       ...(user.showEmail ? { email: user.email } : {}),
@@ -4762,6 +4803,7 @@ app.patch("/users/me", { config: { rateLimit: { max: 10, timeWindow: "1 minute" 
 
   const dataToUpdate: Record<string, unknown> = {};
   if (body.name !== undefined) dataToUpdate.name = body.name;
+  if (body.bio !== undefined) dataToUpdate.bio = body.bio;
   if (body.avatarUrl !== undefined) dataToUpdate.avatarUrl = body.avatarUrl;
   if (body.theme !== undefined) dataToUpdate.theme = body.theme;
   if (body.showEmail !== undefined) dataToUpdate.showEmail = body.showEmail;
@@ -4820,7 +4862,7 @@ app.patch("/users/me", { config: { rateLimit: { max: 10, timeWindow: "1 minute" 
   const user = await prisma.user.update({
     where: { id: currentUser.id },
     data: dataToUpdate,
-    select: { id: true, email: true, name: true, username: true, usernameChangedAt: true, avatarUrl: true, theme: true, showEmail: true, onboardingDone: true, createdAt: true },
+    select: { id: true, email: true, name: true, username: true, usernameChangedAt: true, bio: true, avatarUrl: true, theme: true, showEmail: true, onboardingDone: true, createdAt: true },
   });
 
   return reply.send({ user });
@@ -6114,6 +6156,27 @@ chatIo = createChatServer(
           channelId: channel.id,
           recipientUserIds: [target.id],
           title: `${actorLabel} mentioned you in #${channel.name}`,
+          body: content.slice(0, 140),
+          url: `/groups/${groupId}/channels/${channel.id}`,
+        });
+      }
+    }
+
+    const tagMentions = await parseTagMentions(content, groupId, userId);
+    if (tagMentions.length > 0) {
+      const actorLabel = username ? `@${username}` : "Someone";
+      for (const tm of tagMentions) {
+        // Exclude users already notified via @mention
+        const mentionedIds = new Set(mentioned.map((m) => m.id));
+        const recipients = tm.recipientIds.filter((id) => !mentionedIds.has(id));
+        if (recipients.length === 0) continue;
+        await notificationQueue.add("fanout", {
+          type: "mention",
+          groupId,
+          actorUserId: userId,
+          channelId: channel.id,
+          recipientUserIds: recipients,
+          title: `${actorLabel} mentioned #${tm.tagName} in #${channel.name}`,
           body: content.slice(0, 140),
           url: `/groups/${groupId}/channels/${channel.id}`,
         });
