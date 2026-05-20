@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   useNotificationInbox,
@@ -34,6 +34,11 @@ const ALL_TYPES = Object.keys(TYPE_LABELS)
 type Tab = 'unread' | 'all'
 
 export default function NotificationsPage() {
+  useEffect(() => {
+    document.title = 'Notifications — GEM'
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [])
+
   const navigate = useNavigate()
   const { data, isLoading } = useNotificationInbox()
   const markRead = useMarkNotificationRead()

@@ -18,6 +18,11 @@ type VerifyResponse = {
 const RESEND_COOLDOWN = 60
 
 export default function VerifyEmailPage() {
+  useEffect(() => {
+    document.title = 'Verify Email — GEM'
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [])
+
   const [searchParams] = useSearchParams()
   const userId = searchParams.get('userId') ?? ''
   const magicToken = searchParams.get('token') ?? ''

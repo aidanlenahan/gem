@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import PageToolbar from '../components/PageToolbar'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -95,6 +96,12 @@ export default function UserProfilePage() {
   const { username } = useParams<{ username: string }>()
   const { data, isLoading, error } = useUserProfile(username ?? '')
   const { user: currentUser } = useAuthStore()
+
+  useEffect(() => {
+    if (!data?.user?.name) return
+    document.title = `${data.user.name} — GEM`
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [data?.user?.name])
 
   const { data: mutedData } = useMutedUsers()
   const userId = data?.user?.id ?? ''

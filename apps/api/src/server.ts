@@ -5751,16 +5751,14 @@ app.post("/groups/:groupId/channels/:channelId/messages/:messageId/react", { con
   }
 });
 
-// GET /groups/:groupId/channels/:channelId/subscribers — list subscribers (admin+)
+// GET /groups/:groupId/channels/:channelId/subscribers
+// Admins: always allowed. Members: allowed if channel is invite-only and they are subscribed.
 app.get("/groups/:groupId/channels/:channelId/subscribers", async (request, reply) => {
   const currentUser = await requireAuth(request, reply, prisma);
   const params = await validateRequest(channelParamsSchema, request.params);
 
   const membership = await requireGroupMembership(prisma, currentUser.id, params.groupId);
   const isAdminOrOwner = membership.role === "owner" || membership.role === "admin";
-  if (!isAdminOrOwner) {
-    return reply.status(403).send({ error: "Admin or owner required", code: "FORBIDDEN" });
-  }
 
   const channel = await prisma.channel.findFirst({
     where: { id: params.channelId, groupId: params.groupId },
@@ -5769,12 +5767,24 @@ app.get("/groups/:groupId/channels/:channelId/subscribers", async (request, repl
     return reply.status(404).send({ error: "Channel not found", code: "NOT_FOUND" });
   }
 
+  if (!isAdminOrOwner) {
+    if (!channel.isInviteOnly) {
+      return reply.status(403).send({ error: "Admin or owner required", code: "FORBIDDEN" });
+    }
+    const sub = await prisma.channelSubscription.findUnique({
+      where: { userId_channelId: { userId: currentUser.id, channelId: params.channelId } },
+    });
+    if (!sub) {
+      return reply.status(403).send({ error: "Not a member of this channel", code: "FORBIDDEN" });
+    }
+  }
+
   const subscriptions = await prisma.channelSubscription.findMany({
     where: { channelId: params.channelId },
     include: { user: { select: { id: true, name: true, email: true, avatarUrl: true } } },
   });
 
-  return reply.send({ subscribers: subscriptions.map((s) => s.user) });
+  return reply.send({ subscribers: subscriptions.map((s) => s.user), isAdmin: isAdminOrOwner });
 });
 
 // PUT /groups/:groupId/channels/:channelId/subscribers/:userId — add subscriber (admin+)

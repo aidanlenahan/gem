@@ -42,6 +42,11 @@ interface MutedUser {
 }
 
 export default function SettingsPage() {
+  useEffect(() => {
+    document.title = 'Settings — GEM'
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [])
+
   const { user, login, token } = useAuthStore()
   const toast = useToast()
   const qc = useQueryClient()

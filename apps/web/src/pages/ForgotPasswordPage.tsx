@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { apiFetch } from '../lib/api'
 
@@ -7,6 +7,11 @@ const RESEND_COOLDOWN = 60
 type Mode = 'email' | 'code'
 
 export default function ForgotPasswordPage() {
+  useEffect(() => {
+    document.title = 'Forgot Password — GEM'
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [])
+
   const navigate = useNavigate()
   const [mode, setMode] = useState<Mode>('email')
   const [email, setEmail] = useState('')

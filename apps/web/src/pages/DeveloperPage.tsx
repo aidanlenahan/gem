@@ -10,7 +10,7 @@
  * Any other authenticated user receives a 403-style blocked screen.
  */
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import PageToolbar from '../components/PageToolbar'
 import { useAuthStore } from '../stores/authStore'
 import { apiFetch } from '../lib/api'
@@ -47,6 +47,11 @@ type DevConfig = {
 type Tab = 'config' | 'media' | 'phase7' | 'phase9' | 'email'
 
 export default function DeveloperPage() {
+  useEffect(() => {
+    document.title = 'Developer — GEM'
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [])
+
   const { user } = useAuthStore()
 
   // Guard — non-admin users see a 403 screen
