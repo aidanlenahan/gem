@@ -384,6 +384,12 @@ export default function GroupPage() {
     }
   }
 
+  useEffect(() => {
+    if (!groupData?.group?.name) return
+    document.title = `${groupData.group.name} — GEM`
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [groupData?.group?.name])
+
   if (groupLoading) {
     return (
       <div className="flex justify-center py-16">
@@ -393,12 +399,6 @@ export default function GroupPage() {
   }
 
   const group = groupData?.group
-
-  useEffect(() => {
-    if (!group?.name) return
-    document.title = `${group.name} — GEM`
-    return () => { document.title = 'GEM — Group Event Manager' }
-  }, [group?.name])
 
   if (groupError && !group) {
     return (
