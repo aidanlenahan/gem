@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import PageToolbar from '../components/PageToolbar'
 import { useAuthStore } from '../stores/authStore'
 import { apiFetch, ApiError } from '../lib/api'
@@ -19,6 +19,11 @@ type UpdateMeResponse = {
 }
 
 export default function ProfilePage() {
+  useEffect(() => {
+    document.title = 'My Profile — GEM'
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [])
+
   const { user, login, token } = useAuthStore()
   const toast = useToast()
   const avatarInputRef = useRef<HTMLInputElement>(null)

@@ -1,6 +1,12 @@
+import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 
 export default function NotFoundPage() {
+  useEffect(() => {
+    document.title = 'Page Not Found — GEM'
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [])
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
       <div className="text-center max-w-md">

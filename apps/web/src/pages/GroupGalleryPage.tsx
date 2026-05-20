@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useGroup, useGroupMembers, useGroupPhotosInfinite } from '../hooks/useGroups'
@@ -38,6 +38,13 @@ export default function GroupGalleryPage() {
   }
 
   const group = groupData?.group
+
+  useEffect(() => {
+    if (!group?.name) return
+    document.title = `${group.name} Photos — GEM`
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [group?.name])
+
   const photos = photosPages?.pages.flatMap((p) => p.media) ?? []
 
   const lightboxMedia: LightboxMedia[] = photos.map((m) => ({

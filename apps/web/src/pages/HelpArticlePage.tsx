@@ -1,9 +1,16 @@
+import { useEffect } from 'react'
 import { Link, useParams, Navigate } from 'react-router-dom'
 import { getArticle, helpArticles } from '../lib/helpArticles'
 
 export default function HelpArticlePage() {
   const { slug } = useParams<{ slug: string }>()
   const article = slug ? getArticle(slug) : undefined
+
+  useEffect(() => {
+    if (!article) return
+    document.title = `${article.title} — GEM`
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [article])
 
   if (!article) return <Navigate to="/help" replace />
 

@@ -56,6 +56,11 @@ function getGreeting(name: string): string {
 }
 
 export default function GroupsPage() {
+  useEffect(() => {
+    document.title = 'Groups — GEM'
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [])
+
   const [searchParams, setSearchParams] = useSearchParams()
   const { data, isLoading, isError, error, refetch } = useGroups()
   const isOnline = useIsOnline()

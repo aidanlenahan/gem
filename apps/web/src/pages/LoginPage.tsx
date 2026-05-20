@@ -39,6 +39,11 @@ const RESEND_COOLDOWN = 60
 type Mode = 'password' | 'email-code' | 'email-code-verify'
 
 export default function LoginPage() {
+  useEffect(() => {
+    document.title = 'Sign In — GEM'
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [])
+
   const [searchParams, setSearchParams] = useSearchParams()
   const [mode, setMode] = useState<Mode>('password')
   const [email, setEmail] = useState('')

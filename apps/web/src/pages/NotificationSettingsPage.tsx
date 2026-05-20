@@ -52,6 +52,11 @@ function urlBase64ToArrayBuffer(base64String: string): ArrayBuffer {
 }
 
 export default function NotificationSettingsPage() {
+  useEffect(() => {
+    document.title = 'Notification Settings — GEM'
+    return () => { document.title = 'GEM — Group Event Manager' }
+  }, [])
+
   const toast = useToast()
   const { data: config } = useNotificationConfig()
   const { data: prefsData, isLoading, isError, error } = useNotificationPreferences()
