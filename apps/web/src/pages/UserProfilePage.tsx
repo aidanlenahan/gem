@@ -54,6 +54,7 @@ interface UserProfile {
   id: string
   name: string
   username: string | null
+  bio?: string | null
   avatarUrl: string | null
   email?: string | null
   createdAt: string
@@ -160,6 +161,9 @@ export default function UserProfilePage() {
             <p className="text-indigo-400 text-sm">@{user.username}</p>
           )}
           <p className="text-gray-500 text-xs mt-1">Member since {joinedLabel}</p>
+          {user.bio && (
+            <p className="text-gray-300 text-sm mt-2 whitespace-pre-wrap break-words">{user.bio}</p>
+          )}
           {user.email && (
             <p className="text-gray-400 text-xs mt-0.5">{user.email}</p>
           )}

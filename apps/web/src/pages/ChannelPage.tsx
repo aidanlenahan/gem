@@ -26,10 +26,11 @@ function renderContent(
   content: string,
   currentUserId: string,
   members: Array<{ userId: string; username?: string | null }>,
+  tags: Array<{ name: string; color?: string | null }> = [],
 ) {
-  // Split on @mentions first, then linkify URLs within plain text segments
-  const mentionParts = content.split(/(@[a-zA-Z0-9_.-]+)/g)
-  return mentionParts.flatMap((part, i) => {
+  // Split on @mentions and #tag-mentions, then linkify URLs within plain text segments
+  const parts = content.split(/(@[a-zA-Z0-9_.-]+|#[a-zA-Z0-9_-]+)/g)
+  return parts.flatMap((part, i) => {
     const mentionMatch = part.match(/^@([a-zA-Z0-9_.-]+)$/)
     if (mentionMatch) {
       const handle = mentionMatch[1].toLowerCase()
@@ -45,6 +46,20 @@ function renderContent(
         >
           {part}
         </Link>,
+      ]
+    }
+    const tagMatch = part.match(/^#([a-zA-Z0-9_-]+)$/)
+    if (tagMatch) {
+      const tagName = tagMatch[1].toLowerCase()
+      const tag = tags.find((t) => t.name.toLowerCase() === tagName)
+      return [
+        <span
+          key={`t${i}`}
+          className="inline-flex items-center gap-1 font-medium text-emerald-400 bg-emerald-900/20 rounded px-0.5"
+        >
+          {tag?.color && <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ backgroundColor: tag.color }} />}
+          {part}
+        </span>,
       ]
     }
     // Linkify URLs inside plain text
@@ -281,6 +296,9 @@ export default function ChannelPage() {
   const [mentionQuery, setMentionQuery] = useState<string | null>(null)
   const [mentionStart, setMentionStart] = useState(-1)
   const [mentionIndex, setMentionIndex] = useState(0)
+  const [tagQuery, setTagQuery] = useState<string | null>(null)
+  const [tagStart, setTagStart] = useState(-1)
+  const [tagIndex, setTagIndex] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [newChannelName, setNewChannelName] = useState('')
@@ -464,6 +482,22 @@ export default function ChannelPage() {
     textareaRef.current?.focus()
   }, [input, mentionStart, mentionQuery])
 
+  const tagCandidates = useMemo(() => {
+    if (tagQuery === null) return []
+    return groupTags
+      .filter((t) => tagQuery === '' || t.name.toLowerCase().startsWith(tagQuery.toLowerCase()))
+      .slice(0, 8)
+  }, [tagQuery, groupTags])
+
+  const applyTagMention = useCallback((tagName: string) => {
+    const before = input.slice(0, tagStart)
+    const after = input.slice(tagStart + 1 + (tagQuery?.length ?? 0))
+    setInput(`${before}#${tagName} ${after}`)
+    setTagQuery(null)
+    setTagIndex(0)
+    textareaRef.current?.focus()
+  }, [input, tagStart, tagQuery])
+
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault()
     const trimmed = input.trim()
@@ -476,6 +510,7 @@ export default function ChannelPage() {
     setInput('')
     setReplyingTo(null)
     setMentionQuery(null)
+    setTagQuery(null)
     stopTyping()
   }
 
@@ -485,13 +520,21 @@ export default function ChannelPage() {
     if (val) sendTyping()
     const cursor = e.target.selectionStart ?? val.length
     const before = val.slice(0, cursor)
-    const match = before.match(/@([a-zA-Z0-9_.-]*)$/)
-    if (match) {
-      setMentionQuery(match[1])
+    const atMatch = before.match(/@([a-zA-Z0-9_.-]*)$/)
+    const hashMatch = before.match(/#([a-zA-Z0-9_-]*)$/)
+    if (atMatch) {
+      setMentionQuery(atMatch[1])
       setMentionStart(before.lastIndexOf('@'))
       setMentionIndex(0)
+      setTagQuery(null)
+    } else if (hashMatch) {
+      setTagQuery(hashMatch[1])
+      setTagStart(before.lastIndexOf('#'))
+      setTagIndex(0)
+      setMentionQuery(null)
     } else {
       setMentionQuery(null)
+      setTagQuery(null)
     }
   }
 
@@ -503,6 +546,16 @@ export default function ChannelPage() {
       if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
         e.preventDefault()
         applyMention(mentionCandidates[mentionIndex].username!)
+        return
+      }
+    }
+    if (tagCandidates.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setTagIndex((i) => Math.min(i + 1, tagCandidates.length - 1)); return }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); setTagIndex((i) => Math.max(i - 1, 0)); return }
+      if (e.key === 'Escape')    { e.preventDefault(); setTagQuery(null); return }
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+        e.preventDefault()
+        applyTagMention(tagCandidates[tagIndex].name)
         return
       }
     }
@@ -952,7 +1005,7 @@ export default function ChannelPage() {
                 </div>
               ) : (
                 <>
-                  <p className={`text-[15px] break-words whitespace-pre-wrap ${isOwn ? 'text-white' : 'text-gray-100'}`}>{renderContent(msg.content, currentUser?.id ?? '', members)}</p>
+                  <p className={`text-[15px] break-words whitespace-pre-wrap ${isOwn ? 'text-white' : 'text-gray-100'}`}>{renderContent(msg.content, currentUser?.id ?? '', members, groupTags)}</p>
                   {wasEdited && <span className={`text-[10px] ${isOwn ? 'text-indigo-200/60' : 'text-gray-600'}`}>(edited)</span>}
                   {statusIndicator}
                 </>
@@ -1097,6 +1150,26 @@ export default function ChannelPage() {
                     <Avatar name={m.name} avatarUrl={m.avatarUrl ?? undefined} size="sm" />
                     <span className="text-white font-medium">@{m.username}</span>
                     <span className="text-gray-400 text-xs">{m.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {tagCandidates.length > 0 && (
+              <div className="absolute bottom-full left-0 right-10 mb-1 bg-gray-800 border border-gray-700 rounded-xl shadow-xl overflow-hidden z-50">
+                {tagCandidates.map((t, i) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onMouseDown={(e) => { e.preventDefault(); applyTagMention(t.name) }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                      i === tagIndex ? 'bg-gray-700' : 'hover:bg-gray-700/50'
+                    }`}
+                  >
+                    {t.color && (
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: t.color }} />
+                    )}
+                    <span className="text-emerald-400 font-medium">#{t.name}</span>
+                    <span className="text-gray-500 text-xs">notify tag subscribers</span>
                   </button>
                 ))}
               </div>
@@ -1426,7 +1499,7 @@ export default function ChannelPage() {
                       <span className="text-sm font-semibold text-white">{msg.user?.name ?? 'Unknown'}</span>
                       <span className="text-xs text-gray-500">{formatTime(msg.createdAt)}</span>
                     </div>
-                    <p className="text-sm text-gray-200 break-words whitespace-pre-wrap">{renderContent(msg.content, currentUser?.id ?? '', members)}</p>
+                    <p className="text-sm text-gray-200 break-words whitespace-pre-wrap">{renderContent(msg.content, currentUser?.id ?? '', members, groupTags)}</p>
                   </div>
                   {isAdminOrOwner && (
                     <button
@@ -1474,7 +1547,7 @@ function ManageSubscribersModal({
   groupId: string
   channelId: string
   channelName: string
-  groupMembers: Array<{ userId: string; name: string; email: string; avatarUrl?: string | null; role: string; status: string }>
+  groupMembers: Array<{ userId: string; name: string; email?: string | null; avatarUrl?: string | null; role: string; status: string }>
   isAdmin: boolean
   onClose: () => void
 }) {

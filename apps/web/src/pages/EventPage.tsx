@@ -14,7 +14,6 @@ import DurationPicker from '../components/DurationPicker'
 import DateTimePicker from '../components/DateTimePicker'
 import { apiFetch, ApiError, getApiErrorMessage, getToken } from '../lib/api'
 import { MediaLightbox } from '../components/MediaLightbox'
-import type { LightboxMedia } from '../components/MediaLightbox'
 import { useIsOnline } from '../hooks/useIsOnline'
 import EmptyState from '../components/EmptyState'
 

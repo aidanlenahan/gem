@@ -135,6 +135,19 @@ focus on reliability, UX rough edges, and prep for a small group of external use
     page. New API endpoint GET /groups/:groupId/members/:userId/stats.
     DONE 2026-05-20. Files: server.ts, UserProfilePage.tsx, notes.md
 
+[x] #tag mentions in channel chat — typing `#tagname` in a message triggers a tag autocomplete
+    dropdown (same UX as `@` mentions). On send, server parses `#tagname` patterns, finds all
+    active group members subscribed to that tag (via UserTagPreference), and queues a "mention"
+    notification for each (excluding the sender and anyone already @mentioned). Rendered in chat
+    as a green badge with the tag's color dot. DONE 2026-05-20.
+    Files: server.ts (parseTagMentions helper + socket handler), ChannelPage.tsx
+
+[x] User bio — users can add a short bio (max 200 chars) on their profile. Stored in User.bio
+    (nullable). Editable from ProfilePage (textarea with live char counter). Shown on
+    UserProfilePage below the username/join date. DONE 2026-05-20.
+    Files: schema.prisma, migrations/20260520*, server.ts, authStore.ts, ProfilePage.tsx,
+    UserProfilePage.tsx
+
 --- Infrastructure ---
 
 [ ] Error monitoring — integrate a lightweight error tracker (e.g. Sentry free tier) for
