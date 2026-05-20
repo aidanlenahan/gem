@@ -350,7 +350,6 @@ describe("Phase 9 API integration and smoke coverage", () => {
           title: `Phase 9 Smoke Event ${uniqueSuffix} Updated`,
           details: "Updated by integration test",
           rating: 8,
-          isLegendary: false,
           tagIds: [tagId],
         }),
       }

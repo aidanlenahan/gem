@@ -106,19 +106,19 @@ focus on reliability, UX rough edges, and prep for a small group of external use
 [ ] In-app notification grouping — collapse consecutive notifications of the same type for
     the same event (e.g. "5 people RSVPed to your event") into a single row
 
-[ ] Specify sender in push/email notifications — include the acting user's display name
+[x] Specify sender in push/email notifications — include the acting user's display name
     and avatar URL in fanout payload so notifications read "Alice RSVPed…" not just "New RSVP"
+    DONE 2026-05-20: chat_message title now "{sender} in #{channel}" (added name to chat.ts
+    callback payload); invite title/body now "${actor} invited you" / "${event.title}"; other
+    notification types already included actor names. EventPage edit form: date+duration grid
+    changed from grid-cols-2 to grid-cols-1 sm:grid-cols-2 so duration wraps to its own row
+    on mobile. Files: lib/chat.ts, server.ts, EventPage.tsx
 
 --- Events ---
 
 [ ] Waitlist — when maxAttendees is reached, late RSVPs join a waitlist; promote
     automatically when a yes-RSVP withdraws (add status: "waitlist" on RSVP model)
 
-
-[x] isLegendary badge — flag is in schema and API but only shows a crown icon; let admins
-    toggle it on the event edit page; surface legendary events with a highlighted card on GroupPage
-    DONE 2026-05-19: Admin checkbox in EventPage edit form; EventCard list+grid layouts get gold
-    border (amber-700/60) + ★ star prefix on title when isLegendary. Files: EventPage.tsx, EventCard.tsx, GroupPage.tsx
 
 [ ] Event page map embed — when event.location is set, render an embedded static map
     thumbnail (OpenStreetMap tile, no API key needed) above the directions link
@@ -129,16 +129,19 @@ focus on reliability, UX rough edges, and prep for a small group of external use
 [x] Join modal Code/URL tabs — "Join a Group" modal now has Code tab (invite code input) and
     URL tab (paste full invite link with clipboard paste button). DONE 2026-05-19. Files: GroupsPage.tsx
 
---- Infrastructure ---
+[x] Inline user stats on profile — replaced the "Stats" button on mutual-group cards (which
+    linked to the group-wide stats page) with per-group inline stats showing events created,
+    going/maybe RSVPs, and photos uploaded directly below each group card on the user profile
+    page. New API endpoint GET /groups/:groupId/members/:userId/stats.
+    DONE 2026-05-20. Files: server.ts, UserProfilePage.tsx, notes.md
 
-[ ] Dev vs prod environment split — separate .env.production with its own DB, Redis
-    instance, and storage bucket; document in notes.md
+--- Infrastructure ---
 
 [ ] Error monitoring — integrate a lightweight error tracker (e.g. Sentry free tier) for
     both API (Fastify plugin) and web (ErrorBoundary + Sentry.captureException)
 
 [ ] Automated DB backups — nightly pg_dump cron job to a separate S3/R2 bucket;
-    retention 7 days; alert on failure
+    retention 7 days; alert on failure--how can we do this for free? how does it interact with api? different server?
 
 === v1.0 — Semi-Public Beta ===
 Target: controlled expansion beyond the core dev team to a handful of trusted external

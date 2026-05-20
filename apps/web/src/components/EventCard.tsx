@@ -27,7 +27,6 @@ interface EventCardProps {
     dateTime: string
     location?: string | null
     isPrivate?: boolean
-    isLegendary?: boolean
     tags?: Array<{ id: string; name: string; color?: string | null }>
     rsvps?: Array<{ status: string }>
   }
@@ -63,10 +62,10 @@ export default function EventCard({ event, layout = 'grid' }: EventCardProps) {
     return (
       <Link
         to={`/events/${event.id}`}
-        className={`flex items-center gap-3 bg-gray-900 rounded-xl px-3 py-2.5 transition-colors group ${event.isLegendary ? 'border border-amber-700/60 hover:border-amber-500' : 'border border-gray-800 hover:border-indigo-600'}`}
+        className="flex items-center gap-3 bg-gray-900 rounded-xl px-3 py-2.5 transition-colors group border border-gray-800 hover:border-indigo-600"
       >
         <div className="flex flex-col items-center justify-center w-10 shrink-0 text-center">
-          <span className={`text-[10px] uppercase tracking-wider font-medium leading-none ${event.isLegendary ? 'text-amber-400' : 'text-indigo-400'}`}>{month}</span>
+          <span className="text-[10px] uppercase tracking-wider font-medium leading-none text-indigo-400">{month}</span>
           <span className="text-lg font-bold text-white leading-tight">{day}</span>
           <span className="text-[10px] text-gray-500 leading-none">{time}</span>
         </div>
@@ -74,7 +73,6 @@ export default function EventCard({ event, layout = 'grid' }: EventCardProps) {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-white group-hover:text-indigo-300 truncate flex items-center gap-1.5">
             {event.isPrivate && <LockIcon />}
-            {event.isLegendary && <span className="text-amber-400 leading-none" aria-label="Legendary">★</span>}
             {event.title}
           </p>
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -101,11 +99,10 @@ export default function EventCard({ event, layout = 'grid' }: EventCardProps) {
   return (
     <Link
       to={`/events/${event.id}`}
-      className={`block bg-gray-900 rounded-2xl p-4 transition-colors group ${event.isLegendary ? 'border border-amber-700/60 hover:border-amber-500' : 'border border-gray-800 hover:border-indigo-600'}`}
+      className="block bg-gray-900 rounded-2xl p-4 transition-colors group border border-gray-800 hover:border-indigo-600"
     >
       <h3 className="font-semibold text-white group-hover:text-indigo-300 mb-1 flex items-center gap-1.5">
         {event.isPrivate && <LockIcon />}
-        {event.isLegendary && <span className="text-amber-400 leading-none" aria-label="Legendary">★</span>}
         {event.title}
       </h3>
       <p className="text-gray-400 text-sm">{formatDate(event.dateTime)}</p>

@@ -580,7 +580,6 @@ const updateEventBodySchema = z.object({
   isPrivate: z.boolean().optional(),
   maxAttendees: z.number().int().positive().nullable().optional(),
   location: z.string().max(200).nullable().optional(),
-  isLegendary: z.boolean().optional(),
   tagIds: z.array(schemas.id).max(3, "You can add up to 3 tags per event").optional(),
 });
 
@@ -1250,6 +1249,93 @@ async function buildCalendarFeedResponse(groupId: string, groupName: string) {
   };
 }
 
+function buildWelcomeEmail(name: string, webBase: string): { html: string; text: string } {
+  const btn = (url: string, label: string) =>
+    `<a href="${url}" style="display:inline-block;background:#4f46e5;color:#fff;padding:10px 18px;text-decoration:none;border-radius:8px;font-weight:600;font-size:14px;">${label}</a>`;
+  const h2 = (text: string) =>
+    `<h3 style="margin:24px 0 6px 0;font-size:15px;color:#1e1b4b;">${text}</h3>`;
+  const p = (text: string) =>
+    `<p style="margin:0 0 8px 0;font-size:14px;line-height:1.6;color:#374151;">${text}</p>`;
+
+  const html = `
+    <div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto;padding:32px 24px;background:#fff;">
+      <h2 style="margin:0 0 4px 0;font-size:22px;color:#1e1b4b;">Welcome to Gem, ${name}!</h2>
+      ${p("Your account is verified and ready to go. Here's a quick guide to get you started.")}
+
+      ${h2("1. Join or create a group")}
+      ${p("Gem is built around groups — a private space for your friend circle. Tap <strong>Join a Group</strong> on your home screen and enter an invite code shared by a friend, or create your own group and invite people with a link or code.")}
+
+      ${h2("2. Create an event")}
+      ${p("Inside your group, go to the <strong>Events</strong> tab and tap the <strong>+</strong> button. Give the event a name, date, time, and location. Members can RSVP and chat directly on the event page.")}
+
+      ${h2("3. Chat with your friends")}
+      ${p("Each group has <strong>Channels</strong> — persistent chat rooms for different topics (e.g. #general, #planning). You can also chat directly on any event page. React to messages, reply inline, and pin important ones.")}
+
+      ${h2("4. Share photos")}
+      ${p("Attach photos to any event. Open an event, scroll to the Photos section, and upload from your device. Admins can create named albums from the group's Photos tab.")}
+
+      <div style="margin:24px 0;">
+        ${btn(`${webBase}/groups`, "Open Gem →")}
+      </div>
+
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
+
+      <h3 style="margin:0 0 10px 0;font-size:13px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Helpful links</h3>
+      <table style="width:100%;border-collapse:collapse;">
+        <tr>
+          <td style="padding:6px 0;">
+            <a href="${webBase}/help" style="color:#4f46e5;text-decoration:none;font-size:14px;">📖 Help center</a>
+            <span style="font-size:13px;color:#9ca3af;"> — how-to guides and FAQs</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0;">
+            <a href="${webBase}/updates" style="color:#4f46e5;text-decoration:none;font-size:14px;">✨ What's new</a>
+            <span style="font-size:13px;color:#9ca3af;"> — latest features and updates</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:6px 0;">
+            <a href="${webBase}/contact" style="color:#4f46e5;text-decoration:none;font-size:14px;">✉️ Contact us</a>
+            <span style="font-size:13px;color:#9ca3af;"> — questions, bugs, or feedback</span>
+          </td>
+        </tr>
+      </table>
+
+      <p style="margin:24px 0 0 0;font-size:12px;color:#9ca3af;">
+        You can also email us directly at <a href="mailto:help@gem.aidanlenahan.com" style="color:#4f46e5;text-decoration:none;">help@gem.aidanlenahan.com</a> any time.
+      </p>
+    </div>
+  `;
+
+  const text = [
+    `Welcome to Gem, ${name}!`,
+    `Your account is verified. Here's how to get started:`,
+    ``,
+    `1. Join or create a group`,
+    `   Tap "Join a Group" and enter a friend's invite code, or create your own group at ${webBase}/groups.`,
+    ``,
+    `2. Create an event`,
+    `   Open your group → Events tab → tap + to create an event. Friends can RSVP and chat on the event page.`,
+    ``,
+    `3. Chat with friends`,
+    `   Use Channels for topic-based group chats, or chat directly on any event.`,
+    ``,
+    `4. Share photos`,
+    `   Attach photos to events from the Photos section on any event page.`,
+    ``,
+    `Helpful links:`,
+    `  Help center: ${webBase}/help`,
+    `  What's new:  ${webBase}/updates`,
+    `  Contact us:  ${webBase}/contact`,
+    `  Email:       help@gem.aidanlenahan.com`,
+    ``,
+    `See you in the app → ${webBase}`,
+  ].join("\n");
+
+  return { html, text };
+}
+
 async function sendEmailCode(
   to: string,
   code: string,
@@ -1441,12 +1527,8 @@ app.post("/auth/verify-email", { config: { rateLimit: { max: 20, timeWindow: "1 
 
   if (isMailConfigured()) {
     const webBase = (process.env.WEB_BASE_URL || "").replace(/\/$/, "");
-    sendTransactionalEmail({
-      to: user.email,
-      subject: "Welcome to Gem!",
-      html: `<p>Hi ${user.name},</p><p>Your account is verified. <a href="${webBase}">Start planning</a> your first event with friends.</p>`,
-      text: `Hi ${user.name},\n\nYour Gem account is verified. Head to ${webBase} to start planning events with friends.`,
-    }).catch(() => {});
+    const welcome = buildWelcomeEmail(user.name, webBase);
+    sendTransactionalEmail({ to: user.email, subject: "Welcome to Gem!", ...welcome }).catch(() => {});
   }
 
   const token = await reply.jwtSign({ sub: user.id, email: user.email }, { expiresIn: jwtExpiresIn });
@@ -1482,12 +1564,8 @@ app.post("/auth/verify-email-link", { config: { rateLimit: { max: 10, timeWindow
 
   if (wasJustVerified && isMailConfigured()) {
     const webBase = (process.env.WEB_BASE_URL || "").replace(/\/$/, "");
-    sendTransactionalEmail({
-      to: user.email,
-      subject: "Welcome to Gem!",
-      html: `<p>Hi ${user.name},</p><p>Your account is verified. <a href="${webBase}">Start planning</a> your first event with friends.</p>`,
-      text: `Hi ${user.name},\n\nYour Gem account is verified. Head to ${webBase} to start planning events with friends.`,
-    }).catch(() => {});
+    const welcome = buildWelcomeEmail(user.name, webBase);
+    sendTransactionalEmail({ to: user.email, subject: "Welcome to Gem!", ...welcome }).catch(() => {});
   }
 
   const { emailVerified: _ev, ...safeUser } = user;
@@ -2952,7 +3030,6 @@ app.patch("/events/:id", async (request, reply) => {
       isPrivate: body.isPrivate,
       maxAttendees: body.maxAttendees,
       location: body.location,
-      isLegendary: body.isLegendary,
       tags: body.tagIds
         ? {
             set: body.tagIds.map((id: string) => ({ id })),
@@ -3299,8 +3376,8 @@ app.post("/events/:id/invites", { config: { rateLimit: { max: 20, timeWindow: "1
     actorUserId: currentUser.id,
     eventId: params.id,
     recipientUserIds: [body.userId],
-    title: "You were invited to an event",
-    body: `${currentUser.name} invited you to join an event.`,
+    title: `${currentUser.name} invited you`,
+    body: `"${access.event.title}"`,
     url: `/events/${params.id}`,
   });
 
@@ -4581,6 +4658,45 @@ app.get("/groups/:groupId/stats", async (request, reply) => {
     rsvpByStatus,
     topMembers,
     topTags: topTagsResolved,
+  });
+});
+
+// GET /groups/:groupId/members/:userId/stats — caller must be active member
+app.get("/groups/:groupId/members/:userId/stats", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const { groupId, userId } = request.params as { groupId: string; userId: string };
+
+  await requireGroupMembership(prisma, currentUser.id, groupId);
+
+  const targetMembership = await prisma.membership.findUnique({
+    where: { userId_groupId: { userId, groupId } },
+    select: { status: true },
+  });
+  if (!targetMembership || targetMembership.status !== "active") {
+    return reply.status(404).send({ error: "Member not found", code: "NOT_FOUND" });
+  }
+
+  const [eventsCreated, rsvpCounts, photosUploaded] = await Promise.all([
+    prisma.event.count({ where: { groupId, createdById: userId } }),
+    prisma.rSVP.groupBy({
+      by: ["status"],
+      where: { userId, event: { groupId } },
+      _count: { _all: true },
+    }),
+    prisma.mediaAsset.count({ where: { uploaderId: userId, event: { groupId } } }),
+  ]);
+
+  const rsvpByStatus: Record<string, number> = {};
+  for (const r of rsvpCounts) {
+    rsvpByStatus[r.status] = r._count._all;
+  }
+
+  return reply.send({
+    eventsCreated,
+    rsvpYes: rsvpByStatus["yes"] ?? 0,
+    rsvpMaybe: rsvpByStatus["maybe"] ?? 0,
+    rsvpNo: rsvpByStatus["no"] ?? 0,
+    photosUploaded,
   });
 });
 
@@ -5959,19 +6075,20 @@ chatIo = createChatServer(
   authSecret,
   configuredWebOrigins,
   app.log,
-  async ({ channelId, groupId, userId, username, content }) => {
+  async ({ channelId, groupId, userId, name, username, content }) => {
     const channel = await prisma.channel.findUnique({
       where: { id: channelId },
       select: { id: true, name: true, tags: { select: { id: true } } },
     });
     if (!channel) return;
+    const senderLabel = username ? `@${username}` : name;
     await notificationQueue.add("fanout", {
       type: "chat_message",
       groupId,
       actorUserId: userId,
       channelId: channel.id,
       tagIds: channel.tags.map((t) => t.id),
-      title: `New message in #${channel.name}`,
+      title: `${senderLabel} in #${channel.name}`,
       body: content.slice(0, 140),
       url: `/groups/${groupId}/channels/${channel.id}`,
     });

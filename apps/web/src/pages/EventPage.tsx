@@ -189,7 +189,6 @@ export default function EventPage() {
     document.head.appendChild(script)
   }, [showEditModal])
   const [editIsPrivate, setEditIsPrivate] = useState(false)
-  const [editIsLegendary, setEditIsLegendary] = useState(false)
 
   const event = eventResponse?.event
   const isAdmin = eventResponse?.isAdmin ?? false
@@ -261,7 +260,6 @@ export default function EventPage() {
     setEditLocation(event.location ?? '')
     setEditMaxAttendees(event.maxAttendees != null ? String(event.maxAttendees) : '')
     setEditIsPrivate(event.isPrivate ?? false)
-    setEditIsLegendary(event.isLegendary ?? false)
     setShowEditModal(true)
   }
 
@@ -310,7 +308,6 @@ export default function EventPage() {
         location: editLocation || undefined,
         maxAttendees: editMaxAttendees ? Number(editMaxAttendees) : undefined,
         isPrivate: editIsPrivate,
-        isLegendary: editIsLegendary,
         tagIds: editTagIds,
       })
       toast.success('Event updated')
@@ -514,11 +511,6 @@ export default function EventPage() {
             ))}
           </div>
         )}
-        {event.isLegendary && (
-          <span className="inline-block mt-2 px-3 py-1 rounded-full bg-amber-900 text-amber-300 text-xs font-bold">
-            LEGENDARY
-          </span>
-        )}
         {event.isPrivate && (
           <button
             onClick={() => setShowInviteModal(true)}
@@ -634,7 +626,7 @@ export default function EventPage() {
                   className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">Start Date/Time *</label>
                   <DateTimePicker
@@ -686,21 +678,6 @@ export default function EventPage() {
                   Private event (invite-only)
                 </label>
               </div>
-              {isAdmin && (
-                <div className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    id="editIsLegendary"
-                    checked={editIsLegendary}
-                    onChange={(e) => setEditIsLegendary(e.target.checked)}
-                    className="w-4 h-4 rounded bg-gray-800 border-gray-700 text-amber-500 focus:ring-amber-500"
-                  />
-                  <label htmlFor="editIsLegendary" className="text-sm text-gray-300 flex items-center gap-1.5">
-                    <span>Legendary event</span>
-                    <span className="text-amber-400 text-xs">★</span>
-                  </label>
-                </div>
-              )}
               {groupTagsData?.tags && groupTagsData.tags.length > 0 && (
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">Tags ({editTagIds.length}/{MAX_EVENT_TAGS})</label>
