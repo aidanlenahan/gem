@@ -30,6 +30,8 @@ const releases: Release[] = [
       { type: 'new', text: 'Email visibility on profile — a toggle in Settings lets you choose whether your email address is shown on your public profile page' },
       { type: 'new', text: 'Auto-hyperlinks in channel chat — URLs typed in messages automatically become clickable links that open in a new tab' },
       { type: 'improved', text: 'Join Group modal now has Code and URL tabs — paste an invite code directly or drop in the full invite link; the URL tab includes a clipboard paste button' },
+      { type: 'improved', text: 'Sender name in push notifications — chat notifications now read "Alice in #general" instead of "New message in #general"; event invite notifications show the inviter\'s name and event title' },
+      { type: 'improved', text: 'Help center expanded — five new how-to articles covering getting started, creating events, chat, the updates page, and contacting support' },
       { type: 'new', text: 'Welcome email — a welcome email is sent after email verification to help new members get started' },
       { type: 'new', text: 'First-run onboarding — new users with no groups see a guided modal walking through creating a group, inviting friends, and planning a first event' },
       { type: 'improved', text: 'Empty state on the Groups page — brand-new users see a welcoming 3-step illustration instead of a blank page' },
