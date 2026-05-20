@@ -21,6 +21,7 @@ model User {
   emailVerified              Boolean                     @default(false)
   emailVerificationToken     String?                     @unique
   avatarUrl                  String?
+  bio                        String?
   theme                      String                      @default("dark")
   showEmail                  Boolean                     @default(false)
   onboardingDone             Boolean                     @default(false)

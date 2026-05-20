@@ -66,7 +66,6 @@ export default defineConfig({
         manualChunks(id) {
           if (!id.includes('node_modules')) return
           if (id.includes('@sentry')) return 'vendor-sentry'
-          if (id.includes('socket.io')) return 'vendor-socket'
           if (id.includes('@tanstack')) return 'vendor-query'
           if (id.includes('react') || id.includes('react-dom') || id.includes('react-router') || id.includes('scheduler')) return 'vendor-react'
           return 'vendor'

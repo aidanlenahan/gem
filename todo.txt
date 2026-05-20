@@ -15,11 +15,10 @@ All tasks — completed and pending. Completed entries from `tasks.txt` are incl
 - add reply function to 'slide right' action on mobile
 - confirm message pin functionality
 - mobile auto zoom issue on channel page
-- 'mention' all subscribers to a tag with '#', same functionality as '@' mentions
-- users can add short bio
-- auto hyperlink links (all open in new tab)
+[x] 'mention' all subscribers to a tag with '#', same functionality as '@' mentions
+[x] users can add short bio
 
-- make title of each page have accurate heading to page
+- Validation failed on temp account creation link generation
 
 =================
 ## Channel chat — implementation checklist

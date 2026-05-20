@@ -370,7 +370,7 @@ export function MediaLightbox({
                 <dd className="text-white">{takenAt}</dd>
               </div>
             )}
-            {(current.exifData?.Make || current.exifData?.Model) && (
+            {!!(current.exifData?.Make || current.exifData?.Model) && (
               <div className="col-span-2">
                 <dt className="text-gray-500 text-xs uppercase tracking-wide mb-0.5">Camera</dt>
                 <dd className="text-white">
@@ -378,7 +378,7 @@ export function MediaLightbox({
                 </dd>
               </div>
             )}
-            {current.exifData?.LensModel && (
+            {!!current.exifData?.LensModel && (
               <div className="col-span-2">
                 <dt className="text-gray-500 text-xs uppercase tracking-wide mb-0.5">Lens</dt>
                 <dd className="text-white">{current.exifData.LensModel as string}</dd>
@@ -416,7 +416,7 @@ export function MediaLightbox({
                 </dd>
               </div>
             )}
-            {current.exifData?.Software && (
+            {!!current.exifData?.Software && (
               <div>
                 <dt className="text-gray-500 text-xs uppercase tracking-wide mb-0.5">Software</dt>
                 <dd className="text-white text-xs truncate">{current.exifData.Software as string}</dd>

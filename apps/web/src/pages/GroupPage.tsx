@@ -23,7 +23,6 @@ import {
   useAlbumPhotos,
   useCreateAlbum,
   useDeleteAlbum,
-  useAddToAlbum,
   useRemoveFromAlbum,
   useDeleteGroupMediaAsset,
   useLeaveGroup,
@@ -144,7 +143,6 @@ export default function GroupPage() {
   const [selectedAlbum, setSelectedAlbum] = useState<MediaAlbum | null>(null)
   const [showCreateAlbumModal, setShowCreateAlbumModal] = useState(false)
   const [newAlbumName, setNewAlbumName] = useState('')
-  const [albumPickerPhotoId, setAlbumPickerPhotoId] = useState<string | null>(null)
   const [newChannelName, setNewChannelName] = useState('')
   const [newChannelInviteOnly, setNewChannelInviteOnly] = useState(false)
   const [confirmLeave, setConfirmLeave] = useState(false)
@@ -171,7 +169,6 @@ export default function GroupPage() {
   const { data: albumPhotosData, isLoading: albumPhotosLoading } = useAlbumPhotos(groupId!, selectedAlbum?.id ?? null)
   const createAlbum = useCreateAlbum(groupId!)
   const deleteAlbum = useDeleteAlbum(groupId!)
-  const addToAlbum = useAddToAlbum(groupId!, selectedAlbum?.id ?? '')
   const removeFromAlbum = useRemoveFromAlbum(groupId!, selectedAlbum?.id ?? '')
   const deleteGroupMedia = useDeleteGroupMediaAsset(groupId!)
   const { data: inviteCodeData, refetch: refetchInviteCode } = useGroupInviteCode(groupId!)
@@ -1280,7 +1277,7 @@ export default function GroupPage() {
               currentUserId={currentUser?.id}
               isAdmin={isAdmin}
               onSaveCaption={handleSaveCaptionGroup}
-              onDelete={isAdmin ? (assetId) => deleteGroupMedia.mutateAsync(assetId) : undefined}
+              onDelete={isAdmin ? async (assetId) => { await deleteGroupMedia.mutateAsync(assetId) } : undefined}
             />
           )}
           {mediaSubTab === 'albums' && selectedAlbum && mediaLightboxIndex !== null && albumLightboxMedia.length > 0 && (
@@ -1291,7 +1288,7 @@ export default function GroupPage() {
               currentUserId={currentUser?.id}
               isAdmin={isAdmin}
               onSaveCaption={handleSaveCaptionGroup}
-              onDelete={isAdmin ? (assetId) => deleteGroupMedia.mutateAsync(assetId) : undefined}
+              onDelete={isAdmin ? async (assetId) => { await deleteGroupMedia.mutateAsync(assetId) } : undefined}
             />
           )}
         </div>

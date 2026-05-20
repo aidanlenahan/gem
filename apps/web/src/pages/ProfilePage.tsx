@@ -11,6 +11,7 @@ type UpdateMeResponse = {
     email: string
     name: string
     username?: string | null
+    bio?: string | null
     usernameChangedAt?: string | null
     avatarUrl?: string | null
     theme?: string | null
@@ -30,6 +31,7 @@ export default function ProfilePage() {
 
   const [name, setName] = useState(user?.name ?? '')
   const [username, setUsername] = useState(user?.username ?? '')
+  const [bio, setBio] = useState(user?.bio ?? '')
   const [avatarUrl, setAvatarUrl] = useState(user?.avatarUrl ?? '')
   const [saving, setSaving] = useState(false)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
@@ -111,7 +113,7 @@ export default function ProfilePage() {
     e.preventDefault()
     setSaving(true)
     try {
-      const payload: Record<string, unknown> = { name, avatarUrl: avatarUrl || null }
+      const payload: Record<string, unknown> = { name, bio: bio.trim() || null, avatarUrl: avatarUrl || null }
       const trimmedUsername = username.trim()
       if (trimmedUsername && trimmedUsername !== user?.username) {
         payload.username = trimmedUsername
@@ -230,6 +232,23 @@ export default function ProfilePage() {
           ) : user?.username ? (
             <p className="text-xs text-gray-400 mt-1">Current: @{user.username}</p>
           ) : null}
+        </div>
+
+        {/* Bio */}
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">
+            Bio
+            <span className="text-gray-500 ml-2 font-normal text-xs">(max 200 characters)</span>
+          </label>
+          <textarea
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            maxLength={200}
+            rows={3}
+            placeholder="A short bio visible on your profile"
+            className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+          />
+          <p className="text-xs text-gray-600 text-right mt-0.5">{bio.length}/200</p>
         </div>
 
         {/* Email (read-only) + visibility toggle */}

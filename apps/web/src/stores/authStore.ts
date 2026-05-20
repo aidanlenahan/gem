@@ -7,6 +7,7 @@ interface User {
   email: string
   name: string
   username?: string | null
+  bio?: string | null
   avatarUrl?: string | null
   theme?: string | null
   showEmail?: boolean
