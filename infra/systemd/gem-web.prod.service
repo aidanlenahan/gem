@@ -1,5 +1,5 @@
 [Unit]
-Description=Gem Web (production preview)
+Description=GEM Web (production preview)
 After=network-online.target
 Wants=network-online.target
 
