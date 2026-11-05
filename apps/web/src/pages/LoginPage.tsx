@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { apiFetch, ApiError } from '../lib/api'
+import { apiFetch, ApiError, getApiErrorMessage } from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
 
 function BetaInfoModal({ onClose }: { onClose: () => void }) {
@@ -134,7 +134,7 @@ export default function LoginPage() {
         if (cancelled) return
         setMode('email-code')
         setInfo('That sign-in link is no longer valid. Request a new code below.')
-        setError(err instanceof Error ? err.message : 'Sign-in link expired')
+        setError(getApiErrorMessage(err, 'Sign-in link expired'))
         const params = new URLSearchParams()
         if (loginEmail) {
           setOtpEmail(loginEmail)
@@ -210,7 +210,7 @@ export default function LoginPage() {
         setError('Email not verified. Enter the 6-digit code sent to your inbox.')
         return
       }
-      setError(err instanceof Error ? err.message : 'Sign in failed')
+      setError(getApiErrorMessage(err, 'Sign in failed'))
     } finally {
       setLoading(false)
     }
@@ -228,7 +228,7 @@ export default function LoginPage() {
       login({ ...data.user, avatarUrl: data.user.avatarUrl ?? undefined })
       navigate('/groups')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Verification failed')
+      setError(getApiErrorMessage(err, 'Verification failed'))
     } finally {
       setVerifyLoading(false)
     }
@@ -246,7 +246,7 @@ export default function LoginPage() {
       setResendMessage('Check your email for a new code.')
       startResendCooldown()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not resend code')
+      setError(getApiErrorMessage(err, 'Could not resend code'))
     }
   }
 
@@ -262,7 +262,7 @@ export default function LoginPage() {
       setInfo('If that email is registered, we sent a sign-in code and link.')
       setMode('email-code-verify')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not send code')
+      setError(getApiErrorMessage(err, 'Could not send code'))
     } finally {
       setLoading(false)
     }
@@ -280,7 +280,7 @@ export default function LoginPage() {
       login({ ...data.user, avatarUrl: data.user.avatarUrl ?? undefined })
       navigate(nextPath)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid code')
+      setError(getApiErrorMessage(err, 'Invalid code'))
     } finally {
       setLoading(false)
     }

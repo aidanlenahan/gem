@@ -300,6 +300,18 @@ Ideas not yet scheduled for a release. No priority order.
 === COMPLETED ===
 ========================================================
 
+[x] URL tab persistence on GroupPage — setActiveTab now calls navigate({ search: `?tab=${tab}` }, { replace: true })
+    instead of setSearchParams, fixing the URL-not-updating issue in React Router v7. Also removed a
+    hooks-after-conditional-returns bug: duplicate useQueryClient() at line 474 (after the groupLoading
+    early return) replaced with the existing qc from line 199, eliminating a React hooks invariant violation.
+    DONE 2026-06-05. Files: apps/web/src/pages/GroupPage.tsx
+
+[x] Deploy notifications sent from devalert@gem.aidanlenahan.com — notify.sh now reads ALERT_SMTP_USER,
+    ALERT_SMTP_PASS, and ALERT_EMAIL_FROM from the env file and uses them as the SMTP auth and From: header
+    for deploy emails when set, falling back to primary SMTP_USER/PASS. Matches the existing mailer.ts
+    split between sendTransactionalEmail (noreply@) and sendAlertEmail (devalert@).
+    DONE 2026-06-05. Files: scripts/notify.sh
+
 === v0.9 — Polish & Stability (Done) ===
 Released: 2026-05-26
 
@@ -406,6 +418,19 @@ Released: 2026-05-26
     on mobile. Files: lib/chat.ts, server.ts, EventPage.tsx
 
 --- Events & channels ---
+
+[x] Event deletion UI — delete button (trash icon) added to EventPage header for admins and
+    event creators, next to the edit pencil. Clicking opens a confirmation modal that warns
+    the deletion is permanent. On confirm: calls DELETE /events/:id, then navigates back to
+    the group page. useDeleteEvent hook already existed; only frontend changes needed.
+    DONE 2026-06-03. Files: apps/web/src/pages/EventPage.tsx
+
+[x] Fix: aggressive caching — login() now clears the React Query cache when logging back in
+    after an explicit logout (hydrated=true, current=null), not just when switching between
+    two logged-in users. This prevents stale data from inflight requests (that completed after
+    logout()'s queryClient.clear() call) from showing up under the new account. Also added
+    queryClient.cancelQueries() in logout() to abort inflight requests before clearing.
+    DONE 2026-06-03. Files: apps/web/src/stores/authStore.ts
 
 [x] Auto-hyperlinking in channel chat — URLs typed in messages automatically become clickable
     links opening in a new tab. Preserves @mention detection. DONE 2026-05-19. Files: ChannelPage.tsx

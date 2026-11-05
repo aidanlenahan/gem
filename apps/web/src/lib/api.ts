@@ -147,7 +147,10 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}, _isRetry
     )
   }
 
-  if (res.status === 401 && !_isRetry && path !== '/auth/refresh') {
+  // Don't intercept 401s on credential-checking endpoints — they legitimately
+  // return 401 for wrong password, not for session expiry.
+  const skipRefresh = ['/auth/refresh', '/auth/login', '/auth/change-password']
+  if (res.status === 401 && !_isRetry && !skipRefresh.includes(path)) {
     // Attempt silent token refresh once, then retry the original request.
     try {
       await fetch(`${base}/auth/refresh`, { method: 'POST', credentials: 'include' })

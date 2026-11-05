@@ -33,9 +33,13 @@ export default function DateTimePicker({ value, onChange, required, disabled, cl
     return { datePart: d, hour: h, minute: snapped }
   }, [value])
 
+  const today = () => {
+    const d = new Date()
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  }
+
   const emit = (d: string, h: number, m: number) => {
-    if (!d) return
-    onChange(`${d}T${pad(h)}:${pad(m)}`)
+    onChange(`${d || today()}T${pad(h)}:${pad(m)}`)
   }
 
   const inputClass =

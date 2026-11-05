@@ -14,7 +14,7 @@
 - React Router v7 for app navigation
 - TanStack Query for server-state caching and sync
 - Zustand for lightweight client UI state
-- Tailwind CSS v4 (via `@tailwindcss/vite` plugin, no PostCSS config needed)
+- Tailwind CSS v4 (via `@tailwindcss/postcss` + `postcss.config.js`)
 
 ## PWA and Notifications
 - Service worker + manifest via Workbox/Vite PWA plugin
@@ -23,11 +23,13 @@
 
 ## Backend
 - Fastify for HTTP API
-- `@fastify/jwt` for token auth, `@fastify/cors`, `@fastify/helmet`, `@fastify/rate-limit`
+- `@fastify/jwt` for token auth, `@fastify/cors`, `@fastify/helmet`, `@fastify/rate-limit`, `@fastify/cookie`, `@fastify/compress`, `@fastify/multipart`
 - Zod for request/response schema validation
 - Socket.IO namespaces/rooms for event chat + tag channels
 - BullMQ (Redis-backed) for async jobs (email sends, notification fanout)
 - ioredis as the Redis client
+- `exifr` for EXIF metadata extraction from uploaded images
+- `image-size` for server-side image dimension detection
 
 ## Data and Persistence
 - PostgreSQL + Prisma ORM (using `@prisma/adapter-pg` driver adapter with `pg`)
@@ -50,11 +52,11 @@
 - Inline HTML templates — no external template dependency
 
 ## DevOps and Hosting
-- Frontend hosting: Vercel or Netlify
-- Backend hosting: Fly.io, Railway, or Render
-- Managed Postgres: Neon/Supabase/RDS
-- Managed Redis: Upstash/Redis Cloud
-- Object storage: Cloudflare R2/S3
+- Self-hosted on a VPS via systemd services (`gem-api`, `gem-web`, `gem-api-dev`, `gem-web-dev`)
+- Build + restart via `npm run deploy:prod` / `npm run deploy:dev`
+- Managed Postgres: Neon/Supabase/RDS (or local Docker for dev)
+- Managed Redis: Upstash/Redis Cloud (or local Docker for dev)
+- Object storage: Cloudflare R2/S3 (MinIO locally via Docker)
 
 ## Observability
 - Logging: Pino
@@ -63,6 +65,7 @@
 
 ## Testing
 - Unit: Vitest
+- Component: `@testing-library/react` + `@testing-library/user-event` (happy-dom / jsdom)
 - API integration: Supertest + testcontainers (Postgres)
 - E2E: Playwright
 - Contract validation: Zod schemas shared between client/server

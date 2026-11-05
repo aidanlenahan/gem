@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useGroups, useCreateGroup, useJoinGroup } from '../hooks/useGroups'
+import { useGroups, useCreateGroup, useJoinGroup, useCancelJoinRequest } from '../hooks/useGroups'
 import type { GroupSummary } from '../hooks/useGroups'
 import Modal from '../components/Modal'
 import { GroupCardSkeleton } from '../components/Skeleton'
@@ -68,6 +68,8 @@ export default function GroupsPage() {
   const qc = useQueryClient()
   const createGroup = useCreateGroup()
   const joinGroup = useJoinGroup()
+  const cancelRequest = useCancelJoinRequest()
+  const [cancellingGroupId, setCancellingGroupId] = useState<string | null>(null)
 
   const prefetchGroup = useCallback((groupId: string) => {
     qc.prefetchQuery({
@@ -153,6 +155,17 @@ export default function GroupsPage() {
       if (invite) return invite.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12)
     } catch { /* not a URL */ }
     return null
+  }
+
+  const handleCancelRequest = async (groupId: string) => {
+    setCancellingGroupId(groupId)
+    try {
+      await cancelRequest.mutateAsync(groupId)
+    } catch {
+      // ignore — mutation's own invalidation will still run
+    } finally {
+      setCancellingGroupId(null)
+    }
   }
 
   const handleJoin = async (e: React.FormEvent) => {
@@ -280,29 +293,64 @@ export default function GroupsPage() {
               You are offline. Showing cached data.
             </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data.groups.map((g: GroupSummary) => (
-            <Link
-              key={g.id}
-              to={`/groups/${g.id}`}
-              onMouseEnter={() => prefetchGroup(g.id)}
-              className="bg-gray-900 border border-gray-800 rounded-2xl p-5 hover:border-indigo-600 transition-colors group"
-            >
-              <div className="w-12 h-12 rounded-xl bg-indigo-900 flex items-center justify-center text-xl font-bold mb-3">
-                {g.name[0].toUpperCase()}
-              </div>
-              <h3 className="font-semibold text-white group-hover:text-indigo-300">
-                {g.name}
+
+          {/* Pending join requests */}
+          {data.groups.filter((g: GroupSummary) => g.status === 'pending').length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">
+                Pending Requests
               </h3>
-              {g.description && (
-                <p className="text-gray-400 text-sm mt-1 line-clamp-2">{g.description}</p>
-              )}
-              <div className="flex items-center gap-3 mt-3 text-xs text-gray-500">
-                <span>{g._count?.memberships ?? 0} members</span>
+              <div className="space-y-2">
+                {data.groups.filter((g: GroupSummary) => g.status === 'pending').map((g: GroupSummary) => (
+                  <div key={g.id} className="flex items-center justify-between gap-3 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-lg bg-gray-800 flex items-center justify-center text-sm font-bold text-gray-400 shrink-0">
+                        {g.name[0].toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium text-white text-sm truncate">{g.name}</p>
+                        <p className="text-xs text-yellow-500">Awaiting approval</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleCancelRequest(g.id)}
+                      disabled={cancellingGroupId === g.id}
+                      className="shrink-0 text-xs text-gray-500 hover:text-red-400 transition-colors disabled:opacity-40 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700"
+                    >
+                      {cancellingGroupId === g.id ? 'Cancelling…' : 'Revoke request'}
+                    </button>
+                  </div>
+                ))}
               </div>
-            </Link>
-          ))}
-          </div>
+            </div>
+          )}
+
+          {/* Active groups */}
+          {data.groups.filter((g: GroupSummary) => g.status !== 'pending').length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {data.groups.filter((g: GroupSummary) => g.status !== 'pending').map((g: GroupSummary) => (
+                <Link
+                  key={g.id}
+                  to={`/groups/${g.id}`}
+                  onMouseEnter={() => prefetchGroup(g.id)}
+                  className="bg-gray-900 border border-gray-800 rounded-2xl p-5 hover:border-indigo-600 transition-colors group"
+                >
+                  <div className="w-12 h-12 rounded-xl bg-indigo-900 flex items-center justify-center text-xl font-bold mb-3">
+                    {g.name[0].toUpperCase()}
+                  </div>
+                  <h3 className="font-semibold text-white group-hover:text-indigo-300">
+                    {g.name}
+                  </h3>
+                  {g.description && (
+                    <p className="text-gray-400 text-sm mt-1 line-clamp-2">{g.description}</p>
+                  )}
+                  <div className="flex items-center gap-3 mt-3 text-xs text-gray-500">
+                    <span>{g._count?.memberships ?? 0} members</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
         </>
       )}
 

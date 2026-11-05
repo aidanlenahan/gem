@@ -20,7 +20,9 @@
     "db:migrate": "npm run prisma migrate dev --workspace=apps/api",
     "db:seed": "npm run db:seed --workspace=apps/api",
     "db:studio": "npm run prisma studio --workspace=apps/api",
-    "audit:security": "npm audit --audit-level=high --workspace=apps/api && npm audit --audit-level=high --workspace=apps/web"
+    "audit:security": "npm audit --audit-level=high --workspace=apps/api && npm audit --audit-level=high --workspace=apps/web",
+    "deploy:dev": "npm run build:api && npm run build:web:dev && sudo systemctl restart gem-api-dev gem-web-dev",
+    "deploy:prod": "npm run build:api && npm run build:web:prod && sudo systemctl restart gem-api gem-web"
   },
   "workspaces": [
     "apps/*",

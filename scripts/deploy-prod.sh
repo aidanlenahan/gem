@@ -62,11 +62,13 @@ VITE_API_BASE_URL="$PROD_API_URL" \
   VITE_SENTRY_DSN="$(grep -E '^SENTRY_DSN=' "$PROD_ENV_FILE" | cut -d= -f2- | tr -d '\n\r ')" \
   npm run build:web:prod
 
-# ── 9. Run migrations against production database ────────────────────────────
+# ── 9. Run migrations + regenerate Prisma client ─────────────────────────────
 log "Running database migrations (prod)"
 cd apps/api
-DATABASE_URL="$(grep -E '^DATABASE_URL=' "$PROD_ENV_FILE" | cut -d= -f2-)" \
-  npx prisma migrate deploy
+_db_url="$(grep -E '^DATABASE_URL=' "$PROD_ENV_FILE" | cut -d= -f2-)"
+DATABASE_URL="$_db_url" npx prisma migrate deploy
+log "Regenerating Prisma client"
+DATABASE_URL="$_db_url" npx prisma generate
 cd ../..
 
 # ── 10. Copy Prisma generated client ─────────────────────────────────────────
@@ -78,13 +80,25 @@ cp -r apps/api/src/generated/prisma apps/api/dist/generated/
 log "Restarting prod services"
 sudo systemctl restart gem-api gem-web
 
-# ── 12. Confirm services are up ───────────────────────────────────────────────
-log "Service status"
-sleep 2
+# ── 12. Wait for API to become healthy ────────────────────────────────────────
 { set +x; } 2>/dev/null
-systemctl is-active --quiet gem-api && echo "  gem-api  : active" || echo "  gem-api  : INACTIVE"
+log "Waiting for API to become healthy (up to 30s)..."
+_api_healthy=0
+for i in $(seq 1 30); do
+  if curl -sf "http://127.0.0.1:4000/health" >/dev/null 2>&1; then
+    echo "  gem-api  : healthy after ${i}s"
+    _api_healthy=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$_api_healthy" -eq 0 ]]; then
+  echo "  gem-api  : FAILED to become healthy after 30s — last journal entries:"
+  journalctl -u gem-api --since "60 seconds ago" --no-pager || true
+  exit 1
+fi
 systemctl is-active --quiet gem-web && echo "  gem-web  : active" || echo "  gem-web  : INACTIVE"
+journalctl -u gem-api --since "30 seconds ago" --no-pager || true
 set -x
-journalctl -u gem-api --since "10 seconds ago" --no-pager || true
 
 log "Done — production live at https://gem.aidanlenahan.com"

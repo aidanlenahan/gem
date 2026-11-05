@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import PageToolbar from '../components/PageToolbar'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -127,10 +127,11 @@ function AdminEventCard({ event, canDelete, layout }: { event: EventSummary; can
 export default function GroupPage() {
   const { groupId } = useParams<{ groupId: string }>()
   const navigate = useNavigate()
-  const [activeTab, setActiveTab] = useState<Tab>(() => {
-    const tab = new URLSearchParams(window.location.search).get('tab')
-    return (tab === 'polls' ? 'polls' : 'events') as Tab
-  })
+  const [searchParams, setSearchParams] = useSearchParams()
+  const VALID_TABS: Tab[] = ['events', 'polls', 'members', 'channels', 'media']
+  const rawTab = searchParams.get('tab') as Tab
+  const activeTab: Tab = VALID_TABS.includes(rawTab) ? rawTab : 'events'
+  const setActiveTab = (tab: Tab) => setSearchParams({ tab }, { replace: true })
   const [eventLayout, setEventLayout] = useState<'grid' | 'list'>(() => {
     return (localStorage.getItem('gem:eventLayout') as 'grid' | 'list') ?? 'grid'
   })
@@ -394,6 +395,13 @@ export default function GroupPage() {
   }
 
   useEffect(() => {
+    if (!VALID_TABS.includes(rawTab)) {
+      setSearchParams({ tab: 'events' }, { replace: true })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
     if (!groupData?.group?.name) return
     document.title = `${groupData.group.name} — GEM`
     return () => { document.title = 'GEM — Group Event Manager' }
@@ -470,12 +478,10 @@ export default function GroupPage() {
     caption: m.caption ?? null, createdAt: m.createdAt, uploader: m.uploader,
   }))
 
-  const groupQc = useQueryClient()
-
   const handleSaveCaptionGroup = async (assetId: string, caption: string | null) => {
     await apiFetch(`/media/${assetId}/caption`, { method: 'PATCH', body: JSON.stringify({ caption }) })
-    groupQc.invalidateQueries({ queryKey: ['groups', groupId, 'photos'] })
-    if (selectedAlbum) groupQc.invalidateQueries({ queryKey: ['groups', groupId, 'albums', selectedAlbum.id, 'photos'] })
+    qc.invalidateQueries({ queryKey: ['groups', groupId, 'photos'] })
+    if (selectedAlbum) qc.invalidateQueries({ queryKey: ['groups', groupId, 'albums', selectedAlbum.id, 'photos'] })
   }
 
   const handleCreateAlbum = async (e: React.FormEvent) => {

@@ -4,10 +4,28 @@ Last updated: 2026-05-27
 Pending work only. Completed items live in tasks.txt.
 
 ================
+- [x] poll time change on mobile buggy
+- [x] incorrect password gets network request failed
+- [x] when changing password, enforce password complexity requirements on frontend and backend
+- [x] membership is not in pending state error--when approved pending user to join group, still says pending--no immediate change
+- [x] pending join requests section on groupspage.tsx when there are pending join requests--can revoke request
+- inaccurate member count
+- figure out COORS issue:
+- session management
+- 2FA
+- [x] general app notifications sent with noreply@gem.aidanlenahan.com, developer alerts sent with devalert@gem.aidanlenahan.com
+
+================
 
 ## Infrastructure
 
 - [ ] Step 16: PBS backup integration + restore test
+
+================
+
+## In Progress
+
+- [x] URL tab persistence on GroupPage (/groups/:id?tab=...) — switched setSearchParams to navigate({ search: `?tab=${tab}` }, { replace: true }) as the fix; also removed a hooks-after-conditional-returns violation (duplicate useQueryClient() at line 474 after early returns — merged into qc from line 199). Files: GroupPage.tsx
 
 ================
 
@@ -30,6 +48,12 @@ Pending work only. Completed items live in tasks.txt.
 - [ ] text sizing / accessibility settings per user
 - [ ] recurring events (RRULE support; needs recurrenceRule on Event + RRULE UI)
 - [ ] intuitive usage hints — e.g., tooltip or empty-state note that swipe-right on mobile opens chat actions
+
+================
+
+## Graphify Integration (INCOMPLETE)
+
+- [x] Analysis JSON rebuilt from graph.json; cluster-only re-run (118 communities)
 
 ================
 

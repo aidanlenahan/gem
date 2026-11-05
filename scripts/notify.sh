@@ -18,8 +18,6 @@
 NOTIFY_RECIPIENTS=("awood4555@gmail.com" "aidanlenahan@gmail.com")
 NOTIFY_SEND=1
 NOTIFY_LABEL="unknown"
-NOTIFY_FROM_ADDR=""   # override display From: address (envelope sender stays as SMTP user)
-NOTIFY_FROM_NAME="GEM Deploy"  # display name in From: header
 
 _GEM_NOTIFY_LOG=""
 _GEM_NOTIFY_ENV=""
@@ -27,7 +25,14 @@ _GEM_NOTIFY_T0=0
 _GEM_NOTIFY_ORIG_FD=-1
 
 # ── SMTP config ───────────────────────────────────────────────────────────────
-# Loads SMTP_HOST/PORT/USER/PASS from the first env file that has them.
+# Loads SMTP credentials from the first env file that has them.
+# Prefers ALERT_SMTP_USER/PASS over SMTP_USER/PASS so deploy notifications
+# are sent from devalert@<domain> rather than noreply@<domain>.
+# Sets:
+#   _N_HOST, _N_PORT  — SMTP server (always from primary SMTP_HOST/PORT)
+#   _N_USER, _N_PASS  — primary SMTP auth (used as fallback)
+#   _N_MAIL_USER, _N_MAIL_PASS — auth used for this email (alert creds if present)
+#   _N_FROM_HEADER    — full RFC 2822 From: header value
 _notify_load_smtp() {
   local ef
   local candidates=(
@@ -46,10 +51,28 @@ _notify_load_smtp() {
     if [[ -n "$_N_HOST" && -n "$_N_USER" && -n "$_N_PASS" ]]; then
       _N_CONF="$ef"
       _N_PORT="${_N_PORT:-465}"
+      # Prefer ALERT_SMTP_* credentials when available (sends from devalert@)
+      local _alert_user; _alert_user="$(grep -E '^ALERT_SMTP_USER=' "$ef" | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
+      local _alert_pass; _alert_pass="$(grep -E '^ALERT_SMTP_PASS=' "$ef" | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
+      local _alert_from; _alert_from="$(grep -E '^ALERT_EMAIL_FROM=' "$ef" | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'")"
+      if [[ -n "$_alert_user" && -n "$_alert_pass" ]]; then
+        _N_MAIL_USER="$_alert_user"
+        _N_MAIL_PASS="$_alert_pass"
+      else
+        _N_MAIL_USER="$_N_USER"
+        _N_MAIL_PASS="$_N_PASS"
+      fi
+      if [[ -n "$_alert_from" ]]; then
+        # ALERT_EMAIL_FROM is already in "Name <email>" format
+        _N_FROM_HEADER="$_alert_from"
+      else
+        _N_FROM_HEADER="GEM Deploy <${_N_MAIL_USER}>"
+      fi
       return 0
     fi
   done
   _N_HOST=""; _N_USER=""; _N_PASS=""; _N_CONF="(not found)"
+  _N_MAIL_USER=""; _N_MAIL_PASS=""; _N_FROM_HEADER=""
   return 1
 }
 
@@ -136,9 +159,7 @@ _gem_notify_send() {
   local msg_file; msg_file="$(mktemp /tmp/gem-email-XXXXXX.eml)"
   {
     printf "Date: %s\r\n"              "$(date -R)"
-    local _from_addr="${NOTIFY_FROM_ADDR:-$_N_USER}"
-    local _from_name="${NOTIFY_FROM_NAME:-GEM Deploy}"
-    printf "From: %s <%s>\r\n" "$_from_name" "$_from_addr"
+    printf "From: %s\r\n"             "${_N_FROM_HEADER:-GEM Deploy <${_N_MAIL_USER:-$_N_USER}>}"
     printf "To: %s\r\n"               "$to_hdr"
     printf "Subject: %s\r\n"          "$subject"
     printf "MIME-Version: 1.0\r\n"
@@ -170,7 +191,7 @@ _gem_notify_send() {
     printf "  Shell PID      : %d\r\n"  "$$"
     printf "\r\n"
     printf "  SMTP host      : smtps://%s:%s\r\n"  "$_N_HOST" "$_N_PORT"
-    printf "  SMTP user      : %s\r\n"  "$_N_USER"
+    printf "  SMTP user      : %s\r\n"  "$_N_MAIL_USER"
     printf "  SMTP config    : %s\r\n"  "$_N_CONF"
     printf "  Email sent to  : %s\r\n"  "$to_hdr"
     printf "\r\n"
@@ -196,7 +217,7 @@ _gem_notify_send() {
 
   printf "\n[notify] Sending deploy notification...\n"
   printf "[notify]   SMTP      : smtps://%s:%s\n"  "$_N_HOST" "$_N_PORT"
-  printf "[notify]   From      : %s\n"              "$_N_USER"
+  printf "[notify]   From      : %s\n"              "${_N_FROM_HEADER:-$_N_MAIL_USER}"
   printf "[notify]   To        : %s\n"              "$to_hdr"
   printf "[notify]   Subject   : %s\n"              "$subject"
   printf "[notify]   Log size  : %s bytes\n"        "$log_bytes"
@@ -204,8 +225,8 @@ _gem_notify_send() {
   if curl \
       --silent --show-error \
       --url     "smtps://${_N_HOST}:${_N_PORT}" \
-      --user    "${_N_USER}:${_N_PASS}" \
-      --mail-from "$_N_USER" \
+      --user    "${_N_MAIL_USER}:${_N_MAIL_PASS}" \
+      --mail-from "$_N_MAIL_USER" \
       "${rcpt_args[@]}" \
       --upload-file "$msg_file" 2>&1; then
     printf "[notify]   Result    : sent successfully\n"

@@ -9,9 +9,11 @@ User=aidan
 Group=devs
 WorkingDirectory=/var/www/gem
 Environment=NODE_ENV=production
+ExecStartPre=-/bin/bash -c "ss -tlnp 'sport = :4174' | grep -oP 'pid=\\K[0-9]+' | xargs -r kill -9 2>/dev/null; true"
 ExecStart=/usr/bin/npm --workspace apps/web run preview -- --outDir dist-dev --host 127.0.0.1 --port 4174 --strictPort
-Restart=on-failure
-RestartSec=5
+Restart=always
+RestartSec=3
+KillMode=mixed
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full

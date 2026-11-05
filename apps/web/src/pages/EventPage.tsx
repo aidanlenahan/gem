@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import PageToolbar from '../components/PageToolbar'
 import { useQuery } from '@tanstack/react-query'
-import { useEvent, useEventAttendance, useRsvp, useEventRating, useEventMedia, useLikeMedia, useUpdateEvent } from '../hooks/useEvents'
+import { useEvent, useEventAttendance, useRsvp, useEventRating, useEventMedia, useLikeMedia, useUpdateEvent, useDeleteEvent } from '../hooks/useEvents'
 import type { EventRecord, EventTag } from '../hooks/useEvents'
 import { useGroupMembers, useGroupTags } from '../hooks/useGroups'
 import { useCreateEventTemplate } from '../hooks/useEventTemplates'
@@ -128,7 +128,9 @@ export default function EventPage() {
   const rating = useEventRating(eventId!)
 
   const updateEvent = useUpdateEvent(eventId!)
+  const deleteEvent = useDeleteEvent(eventId!)
   const createTemplate = useCreateEventTemplate()
+  const [confirmDeleteEvent, setConfirmDeleteEvent] = useState(false)
 
   const isOnline = useIsOnline()
   const mediaUploadRef = useRef<HTMLInputElement>(null)
@@ -513,13 +515,25 @@ export default function EventPage() {
               </>
             )}
             {(isAdmin || isCreator) && (
-              <button
-                onClick={handleOpenEditModal}
-                className="p-2 rounded-xl bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
-                aria-label="Edit event"
-              >
-                <PencilIcon />
-              </button>
+              <>
+                <button
+                  onClick={handleOpenEditModal}
+                  className="p-2 rounded-xl bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
+                  aria-label="Edit event"
+                >
+                  <PencilIcon />
+                </button>
+                <button
+                  onClick={() => setConfirmDeleteEvent(true)}
+                  className="p-2 rounded-xl bg-gray-800 text-gray-400 hover:text-red-400 hover:bg-gray-700 transition-colors"
+                  aria-label="Delete event"
+                  title="Delete event"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </>
             )}
             <PageToolbar backTo={`/groups/${event.groupId}`} />
           </div>
@@ -1023,6 +1037,44 @@ export default function EventPage() {
           </p>
         )}
       </div>
+
+      {/* Delete event confirmation modal */}
+      {confirmDeleteEvent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <h3 className="text-base font-bold text-white">Delete event?</h3>
+            <p className="text-sm text-gray-400">
+              This will permanently delete <strong className="text-white">{event?.title}</strong> and all its RSVPs and media. This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteEvent(false)}
+                disabled={deleteEvent.isPending}
+                className="flex-1 py-2.5 rounded-xl border border-gray-700 text-gray-300 text-sm hover:bg-gray-800 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleteEvent.isPending}
+                onClick={async () => {
+                  try {
+                    await deleteEvent.mutateAsync()
+                    setConfirmDeleteEvent(false)
+                    navigate(`/groups/${event?.groupId}`)
+                  } catch {
+                    // error toast handled by the hook
+                  }
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white text-sm font-semibold transition-colors"
+              >
+                {deleteEvent.isPending ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Save as Template modal */}
       {showSaveTemplateModal && (

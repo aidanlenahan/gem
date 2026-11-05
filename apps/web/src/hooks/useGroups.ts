@@ -8,6 +8,8 @@ export type GroupSummary = {
   description?: string | null
   avatarUrl?: string | null
   statsEnabled?: boolean
+  role?: string
+  status?: 'active' | 'pending'
   _count?: { memberships?: number }
 }
 
@@ -57,6 +59,7 @@ export function useGroups() {
   return useQuery({
     queryKey: ['groups'],
     queryFn: () => apiFetch<GroupsResponse>('/groups'),
+    refetchOnWindowFocus: true,
   })
 }
 
@@ -193,25 +196,30 @@ export function useJoinGroup() {
   })
 }
 
+export function useCancelJoinRequest() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (groupId: string) =>
+      apiFetch(`/groups/${groupId}/join-request`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['groups'] }),
+  })
+}
+
 export function useApproveMember(groupId: string) {
   const qc = useQueryClient()
-  const toast = useToast()
   return useMutation({
     mutationFn: (userId: string) =>
       apiFetch(`/groups/${groupId}/members/${userId}/approve`, { method: 'POST' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['groups', groupId, 'members'] }),
-    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to approve member')),
   })
 }
 
 export function useDenyMember(groupId: string) {
   const qc = useQueryClient()
-  const toast = useToast()
   return useMutation({
     mutationFn: (userId: string) =>
       apiFetch(`/groups/${groupId}/members/${userId}/deny`, { method: 'POST' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['groups', groupId, 'members'] }),
-    onError: (err) => toast.error(getApiErrorMessage(err, 'Failed to deny member')),
   })
 }
 

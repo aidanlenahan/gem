@@ -32,6 +32,10 @@ const releases: Release[] = [
       { type: 'improved', text: 'Tab bar scroll indicators — a chevron and gradient fade appear on either side of the group tab bar when the tabs overflow the screen width, making it clear the bar is scrollable on smaller devices' },
       { type: 'fixed', text: 'Demo username collisions — concurrent demo sessions no longer occasionally share the same generated username for dummy users, which caused seed failures' },
       { type: 'fixed', text: 'API startup crash — polls and event-templates routes were registered after the server started listening, causing an immediate crash on every restart; routes are now fully registered before the server binds to its port' },
+      { type: 'new', text: 'Pending join requests — the Groups page now shows a "Pending Requests" section when you have outstanding join requests; each entry shows the group name and a Revoke button to cancel the request before it is reviewed' },
+      { type: 'fixed', text: 'Poll time picker on mobile — changing the hour or minute on a poll option no longer requires setting the date first; the picker now defaults to today when only a time is entered' },
+      { type: 'fixed', text: 'Wrong password error message — entering an incorrect password on login or the change-password form now shows the correct credential error instead of "Network request failed"' },
+      { type: 'fixed', text: 'Password change complexity — the change-password form now enforces the same rules as registration (uppercase, lowercase, and a number) on both the frontend and backend' },
     ],
   },
   {

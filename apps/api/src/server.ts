@@ -638,7 +638,7 @@ async function seedDemoData(demoUserId: string): Promise<string[]> {
       location: "Mount Ridgeline Summit, North Face",
     },
   });
-  await prisma.event.create({
+  const hikeEvent3 = await prisma.event.create({
     data: {
       groupId: hikeGroup.id,
       createdById: sam.id,
@@ -777,7 +777,7 @@ async function seedDemoData(demoUserId: string): Promise<string[]> {
       location: "Sam's living room (or video call)",
     },
   });
-  await prisma.event.create({
+  const bookEvent2 = await prisma.event.create({
     data: {
       groupId: bookGroup.id,
       createdById: demoUserId,
@@ -803,6 +803,123 @@ async function seedDemoData(demoUserId: string): Promise<string[]> {
       { channelId: bookReadChannel.id,    userId: sam.id,     content: "Theory: Rocky is the most interesting character in sci-fi in the last decade. Discuss.", createdAt: hoursAgo(5) },
       { channelId: bookReadChannel.id,    userId: jordan.id,  content: "100% agree. The communication chapters are brilliant.", createdAt: hoursAgo(4) },
       { channelId: bookReadChannel.id,    userId: demoUserId, content: "The way Weir builds their relationship is just chef's kiss", createdAt: hoursAgo(3) },
+    ],
+  });
+
+  // Ratings — pre-seed stars on every event so the rating widget is populated
+  await prisma.eventRating.createMany({
+    data: [
+      { eventId: hikeEvent1.id,  userId: alex.id,    value: 4 },
+      { eventId: hikeEvent1.id,  userId: sam.id,     value: 5 },
+      { eventId: hikeEvent2.id,  userId: sam.id,     value: 4 },
+      { eventId: hikeEvent2.id,  userId: alex.id,    value: 5 },
+      { eventId: hikeEvent3.id,  userId: demoUserId, value: 5 },
+      { eventId: hikeEvent3.id,  userId: alex.id,    value: 4 },
+      { eventId: hikeEvent3.id,  userId: sam.id,     value: 4 },
+      { eventId: movieEvent1.id, userId: jordan.id,  value: 5 },
+      { eventId: movieEvent1.id, userId: casey.id,   value: 5 },
+      { eventId: movieEvent1.id, userId: alex.id,    value: 4 },
+      { eventId: movieEvent2.id, userId: casey.id,   value: 4 },
+      { eventId: movieEvent2.id, userId: jordan.id,  value: 3 },
+      { eventId: bookEvent1.id,  userId: sam.id,     value: 5 },
+      { eventId: bookEvent1.id,  userId: jordan.id,  value: 4 },
+      { eventId: bookEvent2.id,  userId: sam.id,     value: 3 },
+      { eventId: bookEvent2.id,  userId: jordan.id,  value: 4 },
+    ],
+  });
+
+  // Polls — one per group with votes from all relevant members
+  const hikePoll = await prisma.poll.create({
+    data: {
+      groupId: hikeGroup.id,
+      createdById: demoUserId,
+      question: "Post-summit dinner — which spot works for everyone?",
+      options: {
+        create: [
+          { order: 1, title: "Summit Brewery & Grill", description: "Great burgers, 5 min from the trailhead" },
+          { order: 2, title: "Ridgeline Tacos",        description: "Fast, cheap, outdoor seating" },
+          { order: 3, title: "Trailhead Diner",        description: "Quieter, good for big groups" },
+        ],
+      },
+    },
+    include: { options: true },
+  });
+  const [hOpt1, hOpt2, hOpt3] = hikePoll.options.sort((a, b) => a.order - b.order);
+
+  const moviePoll = await prisma.poll.create({
+    data: {
+      groupId: movieGroup.id,
+      createdById: jordan.id,
+      question: "After the MCU marathon — what's our next theme night?",
+      options: {
+        create: [
+          { order: 1, title: "Sci-Fi Classics" },
+          { order: 2, title: "80s Action Marathon" },
+          { order: 3, title: "Studio Ghibli Night" },
+          { order: 4, title: "Horror Vault Picks" },
+        ],
+      },
+    },
+    include: { options: true },
+  });
+  const [mOpt1, mOpt2, mOpt3, mOpt4] = moviePoll.options.sort((a, b) => a.order - b.order);
+
+  const bookPoll = await prisma.poll.create({
+    data: {
+      groupId: bookGroup.id,
+      createdById: sam.id,
+      question: "Next month's read — cast your vote by Friday",
+      options: {
+        create: [
+          { order: 1, title: "Dune",        description: "Frank Herbert — the classic" },
+          { order: 2, title: "The Martian", description: "Andy Weir — we loved Project Hail Mary" },
+          { order: 3, title: "Blindsight",  description: "Peter Watts — hard sci-fi, not for the faint of heart" },
+        ],
+      },
+    },
+    include: { options: true },
+  });
+  const [bOpt1, bOpt2, bOpt3] = bookPoll.options.sort((a, b) => a.order - b.order);
+
+  await prisma.pollVote.createMany({
+    data: [
+      // Hike poll
+      { optionId: hOpt1.id, userId: alex.id,    answer: "yes"   },
+      { optionId: hOpt1.id, userId: sam.id,     answer: "maybe" },
+      { optionId: hOpt1.id, userId: demoUserId, answer: "yes"   },
+      { optionId: hOpt2.id, userId: alex.id,    answer: "no"    },
+      { optionId: hOpt2.id, userId: sam.id,     answer: "yes"   },
+      { optionId: hOpt2.id, userId: demoUserId, answer: "maybe" },
+      { optionId: hOpt3.id, userId: alex.id,    answer: "yes"   },
+      { optionId: hOpt3.id, userId: sam.id,     answer: "no"    },
+      { optionId: hOpt3.id, userId: demoUserId, answer: "no"    },
+      // Movie poll
+      { optionId: mOpt1.id, userId: jordan.id,  answer: "yes"   },
+      { optionId: mOpt1.id, userId: casey.id,   answer: "maybe" },
+      { optionId: mOpt1.id, userId: alex.id,    answer: "no"    },
+      { optionId: mOpt1.id, userId: demoUserId, answer: "yes"   },
+      { optionId: mOpt2.id, userId: jordan.id,  answer: "no"    },
+      { optionId: mOpt2.id, userId: casey.id,   answer: "yes"   },
+      { optionId: mOpt2.id, userId: alex.id,    answer: "yes"   },
+      { optionId: mOpt2.id, userId: demoUserId, answer: "maybe" },
+      { optionId: mOpt3.id, userId: jordan.id,  answer: "yes"   },
+      { optionId: mOpt3.id, userId: casey.id,   answer: "no"    },
+      { optionId: mOpt3.id, userId: alex.id,    answer: "yes"   },
+      { optionId: mOpt3.id, userId: demoUserId, answer: "yes"   },
+      { optionId: mOpt4.id, userId: jordan.id,  answer: "maybe" },
+      { optionId: mOpt4.id, userId: casey.id,   answer: "yes"   },
+      { optionId: mOpt4.id, userId: alex.id,    answer: "maybe" },
+      { optionId: mOpt4.id, userId: demoUserId, answer: "no"    },
+      // Book poll
+      { optionId: bOpt1.id, userId: sam.id,     answer: "yes"   },
+      { optionId: bOpt1.id, userId: jordan.id,  answer: "no"    },
+      { optionId: bOpt1.id, userId: demoUserId, answer: "maybe" },
+      { optionId: bOpt2.id, userId: sam.id,     answer: "maybe" },
+      { optionId: bOpt2.id, userId: jordan.id,  answer: "yes"   },
+      { optionId: bOpt2.id, userId: demoUserId, answer: "yes"   },
+      { optionId: bOpt3.id, userId: sam.id,     answer: "no"    },
+      { optionId: bOpt3.id, userId: jordan.id,  answer: "yes"   },
+      { optionId: bOpt3.id, userId: demoUserId, answer: "yes"   },
     ],
   });
 
@@ -2613,7 +2730,10 @@ app.post("/auth/change-password", { config: { rateLimit: { max: 5, timeWindow: "
   const body = await validateRequest(
     z.object({
       currentPassword: z.string().min(1),
-      newPassword: z.string().min(8, "New password must be at least 8 characters"),
+      newPassword: z.string().min(8).max(72).regex(
+        /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/,
+        "Password must have at least one uppercase letter, one lowercase letter, and one number"
+      ),
     }),
     request.body
   );
@@ -4912,6 +5032,7 @@ app.get("/groups", async (request, reply) => {
     ownerId: m.group.ownerId,
     _count: { memberships: m.group._count.memberships },
     role: m.role,
+    status: m.status,
     joinedAt: m.createdAt,
   }));
 
@@ -5441,14 +5562,18 @@ app.post("/groups/:groupId/members/:userId/approve", { config: { rateLimit: { ma
     });
   }
 
-  await prisma.auditLog.create({
-    data: {
-      groupId: params.groupId,
-      actorId: currentUser.id,
-      action: "member_approved",
-      targetUserId: params.userId,
-    },
-  });
+  await Promise.all([
+    prisma.auditLog.create({
+      data: {
+        groupId: params.groupId,
+        actorId: currentUser.id,
+        action: "member_approved",
+        targetUserId: params.userId,
+      },
+    }),
+    // Invalidate the approved user's groups list cache so they see active status on next fetch.
+    cache.del(`cache:groups:${params.userId}`),
+  ]);
 
   return reply.send({
     membership: {
@@ -5514,6 +5639,31 @@ app.post("/groups/:groupId/members/:userId/deny", { config: { rateLimit: { max: 
     },
   });
 
+  return reply.status(204).send();
+});
+
+// DELETE /groups/:groupId/join-request — authenticated user cancels their own pending join request
+app.delete("/groups/:groupId/join-request", async (request, reply) => {
+  const currentUser = await requireAuth(request, reply, prisma);
+  const params = await validateRequest(groupIdParamsSchema, request.params);
+
+  const membership = await prisma.membership.findUnique({
+    where: { userId_groupId: { userId: currentUser.id, groupId: params.groupId } },
+  });
+
+  if (!membership) {
+    return reply.status(404).send({ error: "No join request found", code: "NOT_FOUND" });
+  }
+
+  if (membership.status !== "pending") {
+    return reply.status(409).send({ error: "Membership is not pending", code: "NOT_PENDING" });
+  }
+
+  await prisma.membership.delete({
+    where: { userId_groupId: { userId: currentUser.id, groupId: params.groupId } },
+  });
+
+  await cache.del(`cache:groups:${currentUser.id}`);
   return reply.status(204).send();
 });
 

@@ -38,6 +38,47 @@ export default function ProfilePage() {
   const [usernameError, setUsernameError] = useState('')
   const [showEmailToggling, setShowEmailToggling] = useState(false)
 
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+  const [changingPassword, setChangingPassword] = useState(false)
+
+  const validatePassword = (pw: string): string => {
+    if (pw.length < 8) return 'Password must be at least 8 characters'
+    if (!/[A-Z]/.test(pw)) return 'Password must include at least one uppercase letter'
+    if (!/[a-z]/.test(pw)) return 'Password must include at least one lowercase letter'
+    if (!/\d/.test(pw)) return 'Password must include at least one number'
+    return ''
+  }
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setPasswordError('')
+    const validationErr = validatePassword(newPassword)
+    if (validationErr) { setPasswordError(validationErr); return }
+    if (newPassword !== confirmPassword) { setPasswordError('Passwords do not match'); return }
+    setChangingPassword(true)
+    try {
+      await apiFetch('/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ currentPassword, newPassword }),
+      })
+      toast.success('Password updated')
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'WRONG_PASSWORD') {
+        setPasswordError('Current password is incorrect')
+      } else {
+        setPasswordError(err instanceof ApiError ? err.message : 'Failed to update password')
+      }
+    } finally {
+      setChangingPassword(false)
+    }
+  }
+
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -287,6 +328,57 @@ export default function ProfilePage() {
           {saving ? 'Saving...' : 'Save Changes'}
         </button>
       </form>
+
+      {/* Change Password */}
+      {!user?.isDemo && (
+        <div className="mt-8 border-t border-gray-800 pt-8">
+          <h3 className="text-lg font-semibold text-white mb-4">Change Password</h3>
+          <form onSubmit={handleChangePassword} className="space-y-3 max-w-sm">
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Current password</label>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => { setCurrentPassword(e.target.value); setPasswordError('') }}
+                autoComplete="current-password"
+                required
+                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">New password</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => { setNewPassword(e.target.value); setPasswordError('') }}
+                autoComplete="new-password"
+                required
+                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">Min 8 chars · uppercase · lowercase · number</p>
+            </div>
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">Confirm new password</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => { setConfirmPassword(e.target.value); setPasswordError('') }}
+                autoComplete="new-password"
+                required
+                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            {passwordError && <p className="text-sm text-red-400">{passwordError}</p>}
+            <button
+              type="submit"
+              disabled={changingPassword}
+              className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white font-semibold py-2.5 px-5 rounded-xl transition-colors text-sm"
+            >
+              {changingPassword ? 'Updating...' : 'Update Password'}
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   )
 }

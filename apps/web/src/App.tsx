@@ -9,33 +9,44 @@ import MarketingLayout from './components/MarketingLayout'
 import { queryClient } from './lib/queryClient'
 
 // Wraps React.lazy so chunk-load failures never crash into the error boundary.
-// Two failure modes need guarding:
-//   1. Rejected import (TypeError from stale 404) — caught below, stays Suspended.
-//   2. Resolved-to-undefined import — happens when Vite's __vite_preload__ error
-//      handler returns undefined (old code called event.preventDefault() which
-//      silenced the rethrow), or on Safari/WebKit where import() can resolve to
-//      undefined instead of rejecting. React then crashes on payload._result.default.
-// In both cases we stay Suspended and fire the same rate-limited reload used by
-// the vite:preloadError handler in main.tsx so the page recovers automatically.
+// Three failure modes need guarding:
+//   1. Rejected import — any error (TypeError on Chrome, plain Error on Safari,
+//      SecurityError from sessionStorage in private mode) → stay Suspended.
+//   2. Resolved-to-undefined import — Safari/WebKit can resolve import() to
+//      undefined instead of rejecting. React 19 production build does
+//      `return payload._result.default` with no null guard, so an undefined
+//      _result crashes the page. We detect it in .then() and stay Suspended.
+//   3. sessionStorage throws in Safari private mode (SecurityError) — wrapped
+//      in try/catch so the guard always runs regardless.
+// In all cases: stay Suspended and fire a rate-limited reload so the page
+// recovers automatically after a stale-chunk deploy.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function lazyLoad<T extends ComponentType<any>>(factory: () => Promise<{ default: T }>) {
+  const stay = (): Promise<{ default: T }> => new Promise(() => {})
+  const reloadOnce = () => {
+    try {
+      const key = 'gem:chunk-reload'
+      const last = Number(sessionStorage.getItem(key) ?? 0)
+      if (Date.now() - last > 10_000) {
+        sessionStorage.setItem(key, String(Date.now()))
+        window.location.reload()
+      }
+    } catch {
+      // sessionStorage unavailable (Safari private mode) — skip reload guard
+    }
+  }
   return lazy(() =>
     factory()
       .then((mod) => {
         if (!mod?.default) {
-          const key = 'gem:chunk-reload'
-          const last = Number(sessionStorage.getItem(key) ?? 0)
-          if (Date.now() - last > 10_000) {
-            sessionStorage.setItem(key, String(Date.now()))
-            window.location.reload()
-          }
-          return new Promise<{ default: T }>(() => {})
+          reloadOnce()
+          return stay()
         }
         return mod
       })
-      .catch((err: unknown) => {
-        if (err instanceof TypeError) return new Promise<{ default: T }>(() => {})
-        throw err
+      .catch(() => {
+        reloadOnce()
+        return stay()
       })
   )
 }
@@ -118,14 +129,6 @@ export default function App() {
   useThemeApplier()
   const { user, login, logout, hydrated } = useAuthStore()
 
-  if (!hydrated) {
-    return (
-      <div className="min-h-screen bg-gray-950 text-gray-200 flex items-center justify-center">
-        <p className="text-sm text-gray-400">Restoring your session...</p>
-      </div>
-    )
-  }
-
   // On mount, silently re-validate the session cookie and refresh user profile.
   // Skip for demo users — their token already has the right expiry.
   useEffect(() => {
@@ -202,6 +205,14 @@ export default function App() {
       canceled = true
     }
   }, [user])
+
+  if (!hydrated) {
+    return (
+      <div className="min-h-screen bg-gray-950 text-gray-200 flex items-center justify-center">
+        <p className="text-sm text-gray-400">Restoring your session...</p>
+      </div>
+    )
+  }
 
   return (
     <QueryClientProvider client={queryClient}>

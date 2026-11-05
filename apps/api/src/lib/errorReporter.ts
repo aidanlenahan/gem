@@ -1,4 +1,4 @@
-import { escapeHtml, isMailConfigured, sendTransactionalEmail } from "./mailer.js";
+import { escapeHtml, isMailConfigured, sendAlertEmail } from "./mailer.js";
 
 interface ErrorContext {
   source: "api" | "worker" | "process" | "client";
@@ -121,7 +121,7 @@ export async function reportError(
     .filter(Boolean)
     .join("\n");
 
-  await sendTransactionalEmail({
+  await sendAlertEmail({
     to: to.join(", "),
     subject: `[GEM ${env}] ${source}: ${error.message.slice(0, 80)}`,
     html,

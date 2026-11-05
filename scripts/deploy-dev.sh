@@ -57,11 +57,13 @@ VITE_API_BASE_URL="$DEV_API_URL" \
   VITE_SENTRY_DSN="$(grep -E '^SENTRY_DSN=' "$_sentry_env" 2>/dev/null | cut -d= -f2- | tr -d '\n\r ' || true)" \
   npm run build:web:dev
 
-# ── 8. Run migrations against dev database ───────────────────────────────────
+# ── 8. Run migrations + regenerate Prisma client ─────────────────────────────
 log "Running database migrations (dev)"
 cd apps/api
-DATABASE_URL="$(grep -E '^DATABASE_URL=' "$DEV_ENV_FILE" | cut -d= -f2-)" \
-  npx prisma migrate deploy
+_db_url="$(grep -E '^DATABASE_URL=' "$DEV_ENV_FILE" | cut -d= -f2-)"
+DATABASE_URL="$_db_url" npx prisma migrate deploy
+log "Regenerating Prisma client"
+DATABASE_URL="$_db_url" npx prisma generate
 cd ../..
 
 # ── 9. Copy Prisma generated client ──────────────────────────────────────────
@@ -73,13 +75,25 @@ cp -r apps/api/src/generated/prisma apps/api/dist/generated/
 log "Restarting dev services"
 sudo systemctl restart gem-api-dev gem-web-dev
 
-# ── 11. Confirm services are up ───────────────────────────────────────────────
-log "Service status"
-sleep 2
+# ── 11. Wait for API to become healthy ───────────────────────────────────────
 { set +x; } 2>/dev/null
-systemctl is-active --quiet gem-api-dev && echo "  gem-api-dev  : active" || echo "  gem-api-dev  : INACTIVE"
+log "Waiting for API to become healthy (up to 30s)..."
+_api_healthy=0
+for i in $(seq 1 30); do
+  if curl -sf "http://127.0.0.1:4001/health" >/dev/null 2>&1; then
+    echo "  gem-api-dev  : healthy after ${i}s"
+    _api_healthy=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$_api_healthy" -eq 0 ]]; then
+  echo "  gem-api-dev  : FAILED to become healthy after 30s — last journal entries:"
+  journalctl -u gem-api-dev --since "60 seconds ago" --no-pager || true
+  exit 1
+fi
 systemctl is-active --quiet gem-web-dev && echo "  gem-web-dev  : active" || echo "  gem-web-dev  : INACTIVE"
+journalctl -u gem-api-dev --since "30 seconds ago" --no-pager || true
 set -x
-journalctl -u gem-api-dev --since "10 seconds ago" --no-pager || true
 
 log "Done — dev environment live at https://gem-dev.aidanlenahan.com"
