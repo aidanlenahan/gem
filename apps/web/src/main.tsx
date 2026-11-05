@@ -55,8 +55,12 @@ if (sentryDsn) {
     import('@sentry/react').then((Sentry) => {
       Sentry.init({
         dsn: sentryDsn,
-        environment: import.meta.env.MODE,
-        release: import.meta.env.VITE_SENTRY_RELEASE,
+        // 'production' for gem.aidanlenahan.com, 'staging' for gem-dev (build:dev
+        // uses --mode staging). VITE_SENTRY_ENVIRONMENT overrides when set.
+        environment: import.meta.env.VITE_SENTRY_ENVIRONMENT || import.meta.env.MODE,
+        // Git SHA injected by the deploy scripts — lets Sentry tie each error to
+        // the exact commit and match uploaded source maps.
+        release: import.meta.env.VITE_SENTRY_RELEASE || undefined,
         tracesSampleRate: Number(import.meta.env.VITE_SENTRY_TRACES_SAMPLE_RATE ?? 0),
         beforeSend(event) {
           if (event.request?.data) {

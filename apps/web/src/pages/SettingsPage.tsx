@@ -919,7 +919,7 @@ export default function SettingsPage() {
           <div className="bg-gray-900 border border-red-900/40 rounded-xl overflow-hidden">
             <button
               type="button"
-              onClick={() => { deleteStep === 'idle' ? setDeleteStep('form') : resetDeleteFlow() }}
+              onClick={() => { if (deleteStep === 'idle') setDeleteStep('form'); else resetDeleteFlow() }}
               className="w-full flex items-center justify-between px-4 py-4 text-left hover:bg-red-950/20 transition-colors"
             >
               <div>

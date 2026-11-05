@@ -8,6 +8,32 @@ on:
 
 jobs:
   # -----------------------------------------------------------------------
+  # Build checks — typecheck, lint, unit tests and a production build.
+  # Catches broken code before it reaches the VM (previously nothing in CI
+  # compiled or tested the app; lint had 6 errors and a test was failing).
+  # -----------------------------------------------------------------------
+  checks:
+    name: Typecheck, Lint, Test, Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Generate Prisma client
+        run: npx prisma generate
+        working-directory: apps/api
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - name: Cloudflare error-page worker routing
+        run: node infra/cloudflare/cf-error-pages/test.mjs
+      - name: Build API + web
+        run: npm run build:api && npm run build:web
+
+  # -----------------------------------------------------------------------
   # P3: npm audit — blocks merges on high/critical CVEs in dependencies
   # -----------------------------------------------------------------------
   audit:
@@ -79,8 +105,8 @@ jobs:
   notify_success:
     name: Success Notification
     runs-on: ubuntu-latest
-    needs: [audit, secrets, sast]
-    if: ${{ needs.audit.result == 'success' && needs.secrets.result == 'success' && needs.sast.result == 'success' }}
+    needs: [checks, audit, secrets, sast]
+    if: ${{ needs.checks.result == 'success' && needs.audit.result == 'success' && needs.secrets.result == 'success' && needs.sast.result == 'success' }}
     steps:
       - name: Send success email
         uses: dawidd6/action-send-mail@62a2d05b79935ad4fb90ce9079928099579c14ac # v9
@@ -149,13 +175,16 @@ jobs:
   notify:
     name: Failure Notification
     runs-on: ubuntu-latest
-    needs: [audit, secrets, sast]
+    needs: [checks, audit, secrets, sast]
     if: failure()
     steps:
       - name: Build failure summary
         id: summary
         run: |
           FAILED=""
+          if [ "${{ needs.checks.result }}" = "failure" ]; then
+            FAILED="${FAILED}\n  • Build checks — typecheck, lint, unit tests or build failed"
+          fi
           if [ "${{ needs.audit.result }}" = "failure" ]; then
             FAILED="${FAILED}\n  • Dependency Audit — high/critical CVE found in npm packages"
           fi

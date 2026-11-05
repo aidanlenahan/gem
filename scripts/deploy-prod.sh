@@ -1,20 +1,29 @@
 #!/usr/bin/env bash
-# Deploy current branch to production.
+# Deploy `main` to production.
 # Prod runs at gem.aidanlenahan.com / api-gem.aidanlenahan.com
 # Reads config from /etc/gem/gem-api.env
+# Builds into apps/api/dist-prod + apps/web/dist-prod (never touches dev's build).
 set -euo pipefail
 
 PROD_ENV_FILE="/etc/gem/gem-api.env"
 PROD_API_URL="https://api-gem.aidanlenahan.com"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GEM_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"; export GEM_ROOT
+cd "$GEM_ROOT"
+
+# shellcheck source=lib/deploy-common.sh
+source "$SCRIPT_DIR/lib/deploy-common.sh"
 
 log() { echo "==> $*"; }
 
-# ── 1. Verify env file exists ────────────────────────────────────────────────
+# ── 1. Preflight ─────────────────────────────────────────────────────────────
 if [[ ! -f "$PROD_ENV_FILE" ]]; then
   echo "ERROR: $PROD_ENV_FILE not found."
   exit 1
 fi
+require_prod_branch
+require_unit_dir gem-api dist-prod
+require_unit_dir gem-web dist-prod
 
 # ── 2. Confirm ───────────────────────────────────────────────────────────────
 echo ""
@@ -22,6 +31,7 @@ echo "  ┌───────────────────────
 echo "  │  Deploying to PRODUCTION                │"
 echo "  │  gem.aidanlenahan.com                   │"
 echo "  └─────────────────────────────────────────┘"
+echo "  commit: $(git log -1 --pretty='%h %s')"
 echo ""
 read -r -p "Continue? [y/N] " confirm
 if [[ "${confirm,,}" != "y" ]]; then
@@ -29,76 +39,53 @@ if [[ "${confirm,,}" != "y" ]]; then
   exit 0
 fi
 
-# ── 3. Set up email notifications (captures all subsequent output) ───────────
+# ── 3. Email notifications (captures all subsequent output) ──────────────────
 # shellcheck source=notify.sh
 source "$SCRIPT_DIR/notify.sh"
 setup_notifications "$PROD_ENV_FILE" "Deploy -> Production (${PROD_API_URL})"
 
-# ── 4. Enable full command tracing ───────────────────────────────────────────
+# ── 4. Full command tracing (secrets are read with tracing paused) ──────────
 set -x
 
-# ── 5. Print system context ───────────────────────────────────────────────────
 log "System context"
-date
-uname -a
-whoami
-pwd
+date; uname -a; whoami; pwd
 node --version 2>/dev/null || true
 npm  --version 2>/dev/null || true
 git  log --oneline -5
 
-# ── 6. Install dependencies ──────────────────────────────────────────────────
+# ── 5. Install locked dependencies ───────────────────────────────────────────
+# Not `npm ci`: it deletes node_modules, which the running prod AND dev
+# processes share in this single checkout. Instead install, then refuse to
+# continue if npm rewrote the lockfile (prod must run exactly what's in git).
 log "Installing dependencies"
-npm install
-
-# ── 7. Build API ─────────────────────────────────────────────────────────────
-log "Building API"
-npm run build:api
-
-# ── 8. Build web with prod API URL ───────────────────────────────────────────
-log "Building web (targeting $PROD_API_URL)"
-VITE_API_BASE_URL="$PROD_API_URL" \
-  VITE_SOCKET_URL="$PROD_API_URL" \
-  VITE_SENTRY_DSN="$(grep -E '^SENTRY_DSN=' "$PROD_ENV_FILE" | cut -d= -f2- | tr -d '\n\r ')" \
-  npm run build:web:prod
-
-# ── 9. Run migrations + regenerate Prisma client ─────────────────────────────
-log "Running database migrations (prod)"
-cd apps/api
-_db_url="$(grep -E '^DATABASE_URL=' "$PROD_ENV_FILE" | cut -d= -f2-)"
-DATABASE_URL="$_db_url" npx prisma migrate deploy
-log "Regenerating Prisma client"
-DATABASE_URL="$_db_url" npx prisma generate
-cd ../..
-
-# ── 10. Copy Prisma generated client ─────────────────────────────────────────
-log "Copying Prisma client"
-mkdir -p apps/api/dist/generated
-cp -r apps/api/src/generated/prisma apps/api/dist/generated/
-
-# ── 11. Restart prod services ─────────────────────────────────────────────────
-log "Restarting prod services"
-sudo systemctl restart gem-api gem-web
-
-# ── 12. Wait for API to become healthy ────────────────────────────────────────
-{ set +x; } 2>/dev/null
-log "Waiting for API to become healthy (up to 30s)..."
-_api_healthy=0
-for i in $(seq 1 30); do
-  if curl -sf "http://127.0.0.1:4000/health" >/dev/null 2>&1; then
-    echo "  gem-api  : healthy after ${i}s"
-    _api_healthy=1
-    break
-  fi
-  sleep 1
-done
-if [[ "$_api_healthy" -eq 0 ]]; then
-  echo "  gem-api  : FAILED to become healthy after 30s — last journal entries:"
-  journalctl -u gem-api --since "60 seconds ago" --no-pager || true
+npm install --no-audit --no-fund
+if ! git diff --quiet -- package-lock.json; then
+  echo "ERROR: npm install modified package-lock.json — commit the lockfile update via a PR first." >&2
+  git checkout -- package-lock.json
   exit 1
 fi
-systemctl is-active --quiet gem-web && echo "  gem-web  : active" || echo "  gem-web  : INACTIVE"
-journalctl -u gem-api --since "30 seconds ago" --no-pager || true
-set -x
 
-log "Done — production live at https://gem.aidanlenahan.com"
+# ── 6. Prisma client → API → web ─────────────────────────────────────────────
+log "Generating Prisma client"
+prisma_generate
+log "Building API (dist-prod)"
+build_api prod
+log "Building web (dist-prod → $PROD_API_URL)"
+build_web prod "$PROD_API_URL" "$PROD_ENV_FILE"
+
+# ── 7. Migrations (fails the deploy on error) ────────────────────────────────
+run_migrations "$PROD_ENV_FILE" "prod"
+
+# ── 8. Restart + health check ────────────────────────────────────────────────
+log "Restarting prod services"
+sudo systemctl restart gem-api gem-web
+wait_healthy 4000 gem-api prod
+systemctl is-active --quiet gem-web && echo "  gem-web  : active" || { echo "  gem-web  : INACTIVE"; exit 1; }
+journalctl -u gem-api --since "30 seconds ago" --no-pager || true
+
+# Tag what's live so you can always see/roll back to the last good prod deploy.
+git tag -f "prod-live" HEAD >/dev/null 2>&1 || true
+git tag "prod-$(date +%Y%m%d-%H%M%S)" HEAD >/dev/null 2>&1 || true
+
+set -x
+log "Done — production live at https://gem.aidanlenahan.com (release $(git_sha))"

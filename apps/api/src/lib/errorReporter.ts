@@ -1,4 +1,5 @@
 import { escapeHtml, isMailConfigured, sendAlertEmail } from "./mailer.js";
+import { appEnv, appRelease } from "./env.js";
 
 interface ErrorContext {
   source: "api" | "worker" | "process" | "client";
@@ -59,7 +60,8 @@ export async function reportError(
   const fp = fingerprint(error);
   if (!shouldSend(fp)) return;
 
-  const env = (process.env.NODE_ENV ?? "unknown").toUpperCase();
+  // APP_ENV distinguishes prod from staging (both run NODE_ENV=production).
+  const env = appEnv.toUpperCase();
   const source = context.source.toUpperCase();
   const ts = new Date().toISOString();
   const stack = (error.stack ?? error.message).slice(0, 4000);
@@ -71,6 +73,7 @@ export async function reportError(
       ["User ID", context.userId],
       ["Job ID", context.jobId],
       ["User Agent", context.userAgent],
+      ["Release", appRelease],
     ] as [string, string | undefined][]
   ).filter((pair): pair is [string, string] => Boolean(pair[1]));
 

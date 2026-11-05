@@ -68,5 +68,6 @@ experience.md
 
 calendar-todo.txt
 
-scripts/
-TECHSTACK.md
+# NOTE: scripts/ and TECHSTACK.md used to be ignored here even though they are
+# tracked — that silently dropped any NEW script from commits. Ignore specific
+# local-only files instead (e.g. dev.sh above).

@@ -111,6 +111,7 @@ import {
 import { escapeHtml, getMailTransporter, isMailConfigured, sendTransactionalEmail, verifyMailTransporter } from "./lib/mailer.js";
 import { buildGoogleCalendarLink, buildIcsCalendar } from "./lib/calendar.js";
 import { reportError } from "./lib/errorReporter.js";
+import { appEnv, appRelease } from "./lib/env.js";
 
 // Initialize clients
 
@@ -1038,8 +1039,9 @@ const sentryEnabled = Boolean(sentryDsn);
 if (sentryEnabled) {
   Sentry.init({
     dsn: sentryDsn,
-    environment: process.env.NODE_ENV || "development",
-    release: process.env.SENTRY_RELEASE,
+    // APP_ENV, not NODE_ENV: dev/staging also runs with NODE_ENV=production.
+    environment: appEnv,
+    release: appRelease,
     tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE || 0),
     beforeSend(event) {
       if (event.request?.data) {
@@ -1788,7 +1790,8 @@ app.get("/metrics", {
     },
     sentry: {
       enabled: sentryEnabled,
-      environment: process.env.NODE_ENV || "development",
+      environment: appEnv,
+      release: appRelease ?? null,
     },
   });
 });
@@ -7976,6 +7979,7 @@ const gracefulShutdown = async () => {
   await app.close();
   await prisma.$disconnect();
   redis.disconnect();
+  if (sentryEnabled) await Sentry.close(2000);
   process.exit(0);
 };
 
@@ -7984,13 +7988,17 @@ process.on("SIGINT", gracefulShutdown);
 
 process.on("uncaughtException", (error) => {
   app.log.fatal({ err: error }, "Uncaught exception");
-  void reportError(error, { source: "process", url: "uncaughtException" }).finally(() =>
-    process.exit(1)
-  );
+  // Sentry's built-in OnUncaughtException integration already captured this;
+  // flush before exiting or the crash event is usually lost.
+  void Promise.allSettled([
+    reportError(error, { source: "process", url: "uncaughtException" }),
+    sentryEnabled ? Sentry.flush(2000) : Promise.resolve(true),
+  ]).finally(() => process.exit(1));
 });
 
 process.on("unhandledRejection", (reason) => {
   const error = reason instanceof Error ? reason : new Error(String(reason));
   app.log.error({ err: error }, "Unhandled promise rejection");
+  // (Sentry's OnUnhandledRejection integration captures this automatically.)
   void reportError(error, { source: "process", url: "unhandledRejection" });
 });

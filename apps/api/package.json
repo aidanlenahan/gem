@@ -8,10 +8,13 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
+    "build:prod": "tsc -p tsconfig.json --outDir dist-prod --tsBuildInfoFile .tsbuildinfo-prod",
+    "build:dev": "tsc -p tsconfig.json --outDir dist-dev --tsBuildInfoFile .tsbuildinfo-dev",
     "start": "node dist/server.js",
     "db:seed": "tsx src/scripts/seed.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run src/__tests__"
+    "test": "vitest run --dir src/__tests__ unit.test",
+    "test:integration": "vitest run --dir src/__tests__ integration.test"
   },
   "keywords": [],
   "author": "",
