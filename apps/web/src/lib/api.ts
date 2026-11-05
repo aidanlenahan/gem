@@ -152,14 +152,21 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}, _isRetry
   const skipRefresh = ['/auth/refresh', '/auth/login', '/auth/change-password']
   if (res.status === 401 && !_isRetry && !skipRefresh.includes(path)) {
     // Attempt silent token refresh once, then retry the original request.
+    // fetch() only rejects on network failure — a 401/403 from /auth/refresh
+    // resolves normally, so check `ok` explicitly or the logout signal never fires.
+    let refreshed = false
     try {
-      await fetch(`${base}/auth/refresh`, { method: 'POST', credentials: 'include' })
-      return apiFetch<T>(path, init, true)
+      const refreshRes = await fetch(`${base}/auth/refresh`, { method: 'POST', credentials: 'include' })
+      refreshed = refreshRes.ok
     } catch {
+      refreshed = false
+    }
+    if (!refreshed) {
       // Refresh failed — signal the app to log the user out.
       window.dispatchEvent(new CustomEvent('auth:expired'))
       throw new ApiError(401, 'UNAUTHORIZED', 'Session expired')
     }
+    return apiFetch<T>(path, init, true)
   }
 
   if (!res.ok) {

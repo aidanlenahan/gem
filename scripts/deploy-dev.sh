@@ -44,11 +44,18 @@ git  log --oneline -5
 log "Installing dependencies"
 npm install
 
-# ── 6. Build API ─────────────────────────────────────────────────────────────
-log "Building API"
-npm run build:api
+# ── 6. Prisma client → API → web ─────────────────────────────────────────────
+# Generate first so the API compiles against the current schema. Each env
+# builds into its own dist-dev so a deploy never changes the other env's code.
+log "Generating Prisma client"
+(cd apps/api && npx prisma generate)
 
-# ── 7. Build web with dev API URL ────────────────────────────────────────────
+log "Building API (dist-dev)"
+npm --workspace apps/api run build:dev
+mkdir -p apps/api/dist-dev/generated
+rm -rf apps/api/dist-dev/generated/prisma
+cp -r apps/api/src/generated/prisma apps/api/dist-dev/generated/
+
 log "Building web (targeting $DEV_API_URL)"
 _sentry_env="$DEV_ENV_FILE"
 grep -q "^SENTRY_DSN=" "$_sentry_env" 2>/dev/null || _sentry_env="/etc/gem/gem-api.env"
@@ -56,26 +63,24 @@ VITE_API_BASE_URL="$DEV_API_URL" \
   VITE_SOCKET_URL="$DEV_API_URL" \
   VITE_SENTRY_DSN="$(grep -E '^SENTRY_DSN=' "$_sentry_env" 2>/dev/null | cut -d= -f2- | tr -d '\n\r ' || true)" \
   npm run build:web:dev
+# Source maps are not uploaded anywhere; don't serve them publicly.
+find apps/web/dist-dev -name '*.map' -type f -delete
 
-# ── 8. Run migrations + regenerate Prisma client ─────────────────────────────
+# ── 7. Migrations ────────────────────────────────────────────────────────────
+# Tracing is paused here: DATABASE_URL contains the DB password and would
+# otherwise be printed into the emailed deploy log.
 log "Running database migrations (dev)"
-cd apps/api
+{ set +x; } 2>/dev/null
 _db_url="$(grep -E '^DATABASE_URL=' "$DEV_ENV_FILE" | cut -d= -f2-)"
-DATABASE_URL="$_db_url" npx prisma migrate deploy
-log "Regenerating Prisma client"
-DATABASE_URL="$_db_url" npx prisma generate
-cd ../..
+(cd apps/api && DATABASE_URL="$_db_url" npx prisma migrate deploy)
+unset _db_url
+set -x
 
-# ── 9. Copy Prisma generated client ──────────────────────────────────────────
-log "Copying Prisma client"
-mkdir -p apps/api/dist/generated
-cp -r apps/api/src/generated/prisma apps/api/dist/generated/
-
-# ── 10. Restart dev services ──────────────────────────────────────────────────
+# ── 8. Restart dev services ──────────────────────────────────────────────────
 log "Restarting dev services"
 sudo systemctl restart gem-api-dev gem-web-dev
 
-# ── 11. Wait for API to become healthy ───────────────────────────────────────
+# ── 9. Wait for API to become healthy ───────────────────────────────────────
 { set +x; } 2>/dev/null
 log "Waiting for API to become healthy (up to 30s)..."
 _api_healthy=0
