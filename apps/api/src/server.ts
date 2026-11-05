@@ -886,8 +886,10 @@ const configuredWebSocketOrigins = configuredWebOrigins.map((origin) => {
 });
 
 // Create Fastify app.
-// trustProxy: 1 = trust exactly one upstream proxy hop (cloudflared), so request.ip
-// resolves to the real client IP rather than the Cloudflare edge IP.
+// trustProxy: "loopback" = trust X-Forwarded-For only from local proxies (cloudflared
+// connects via 127.0.0.1), so request.ip resolves to the real client IP rather than
+// the tunnel's loopback address. Fastify >=5.12 ignores numeric hop counts (fails
+// closed), so an address-based value is required.
 const app = Fastify({
   logger: {
     redact: {
@@ -910,7 +912,7 @@ const app = Fastify({
       censor: "[REDACTED]",
     },
   },
-  trustProxy: 1,
+  trustProxy: "loopback",
 });
 
 const sentryDsn = process.env.SENTRY_DSN_API || process.env.SENTRY_DSN;
