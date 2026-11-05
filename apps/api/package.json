@@ -39,7 +39,7 @@
     "@fastify/rate-limit": "^10.3.0",
     "@prisma/adapter-pg": "^7.6.0",
     "@prisma/client": "^7.6.0",
-    "@sentry/node": "^10.48.0",
+    "@sentry/node": "^11.10.0",
     "bullmq": "^5.73.0",
     "dotenv": "^17.4.0",
     "exifr": "^7.1.3",
