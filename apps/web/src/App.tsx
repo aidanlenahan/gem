@@ -6,6 +6,7 @@ import { ApiError, apiFetch } from './lib/api'
 import { useThemeApplier } from './hooks/useTheme'
 import Layout from './components/Layout'
 import MarketingLayout from './components/MarketingLayout'
+import Seo from './components/Seo'
 import { queryClient } from './lib/queryClient'
 
 // Wraps React.lazy so chunk-load failures never crash into the error boundary.
@@ -216,6 +217,7 @@ export default function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <Seo />
       <Suspense fallback={<div className="h-full bg-gray-950" />}>
       <Routes>
         {/* Public routes — MarketingLayout wraps the public landing and auth pages */}
