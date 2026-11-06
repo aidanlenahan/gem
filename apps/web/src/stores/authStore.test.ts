@@ -27,7 +27,7 @@ function seedPersistedAuth(user: PersistedAuthShape['state']['user']) {
 async function waitForHydration(check: () => boolean, attempts = 20) {
   for (let i = 0; i < attempts; i += 1) {
     if (check()) return
-    await Promise.resolve()
+    await new Promise((resolve) => setTimeout(resolve, 0))
   }
   throw new Error('auth store did not hydrate in time')
 }
@@ -41,6 +41,12 @@ async function loadAuthModules() {
 describe('auth store persistence', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    // No real network in unit tests: the store calls /users/me when nothing is
+    // persisted. Simulate a logged-out session (401) instead of hitting localhost.
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    })))
   })
 
   it('bootstraps user from localStorage for reload persistence', async () => {

@@ -1038,7 +1038,8 @@ const sentryEnabled = Boolean(sentryDsn);
 if (sentryEnabled) {
   Sentry.init({
     dsn: sentryDsn,
-    environment: process.env.NODE_ENV || "development",
+    // APP_ENV separates prod from dev (both run with NODE_ENV=production).
+    environment: process.env.APP_ENV || process.env.NODE_ENV || "development",
     release: process.env.SENTRY_RELEASE,
     tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE || 0),
     beforeSend(event) {
@@ -7984,9 +7985,11 @@ process.on("SIGINT", gracefulShutdown);
 
 process.on("uncaughtException", (error) => {
   app.log.fatal({ err: error }, "Uncaught exception");
-  void reportError(error, { source: "process", url: "uncaughtException" }).finally(() =>
-    process.exit(1)
-  );
+  // Flush Sentry before exiting, otherwise the crash event is usually lost.
+  void Promise.allSettled([
+    reportError(error, { source: "process", url: "uncaughtException" }),
+    sentryEnabled ? Sentry.flush(2000) : Promise.resolve(true),
+  ]).finally(() => process.exit(1));
 });
 
 process.on("unhandledRejection", (reason) => {

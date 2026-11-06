@@ -59,7 +59,7 @@ export async function reportError(
   const fp = fingerprint(error);
   if (!shouldSend(fp)) return;
 
-  const env = (process.env.NODE_ENV ?? "unknown").toUpperCase();
+  const env = (process.env.APP_ENV ?? process.env.NODE_ENV ?? "unknown").toUpperCase();
   const source = context.source.toUpperCase();
   const ts = new Date().toISOString();
   const stack = (error.stack ?? error.message).slice(0, 4000);

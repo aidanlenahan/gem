@@ -11,9 +11,11 @@ User=aidan
 Group=devs
 WorkingDirectory=/var/www/gem
 EnvironmentFile=/etc/gem/gem-api-dev.env
-ExecStartPre=/usr/bin/mkdir -p /var/www/gem/apps/api/dist/generated
-ExecStartPre=/usr/bin/cp -r /var/www/gem/apps/api/src/generated/prisma /var/www/gem/apps/api/dist/generated/
-ExecStart=/usr/bin/node /var/www/gem/apps/api/dist/server.js
+# Each environment runs its own build (dist-prod / dist-dev) so deploying one
+# can never change the code the other runs. The Prisma client is bundled into
+# that directory at build time by the deploy scripts — it is NOT
+# re-copied here, since src/generated is shared and may belong to the other env.
+ExecStart=/usr/bin/node /var/www/gem/apps/api/dist-dev/server.js
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true

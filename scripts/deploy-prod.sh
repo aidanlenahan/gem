@@ -51,36 +51,41 @@ git  log --oneline -5
 log "Installing dependencies"
 npm install
 
-# ── 7. Build API ─────────────────────────────────────────────────────────────
-log "Building API"
-npm run build:api
+# ── 7. Prisma client → API → web ─────────────────────────────────────────────
+# Generate first so the API compiles against the current schema. Each env
+# builds into its own dist-prod so a deploy never changes the other env's code.
+log "Generating Prisma client"
+(cd apps/api && npx prisma generate)
 
-# ── 8. Build web with prod API URL ───────────────────────────────────────────
+log "Building API (dist-prod)"
+npm --workspace apps/api run build:prod
+mkdir -p apps/api/dist-prod/generated
+rm -rf apps/api/dist-prod/generated/prisma
+cp -r apps/api/src/generated/prisma apps/api/dist-prod/generated/
+
 log "Building web (targeting $PROD_API_URL)"
 VITE_API_BASE_URL="$PROD_API_URL" \
   VITE_SOCKET_URL="$PROD_API_URL" \
   VITE_SENTRY_DSN="$(grep -E '^SENTRY_DSN=' "$PROD_ENV_FILE" | cut -d= -f2- | tr -d '\n\r ')" \
   npm run build:web:prod
+# Source maps are not uploaded anywhere; don't serve them publicly.
+find apps/web/dist-prod -name '*.map' -type f -delete
 
-# ── 9. Run migrations + regenerate Prisma client ─────────────────────────────
+# ── 8. Migrations ────────────────────────────────────────────────────────────
+# Tracing is paused here: DATABASE_URL contains the DB password and would
+# otherwise be printed into the emailed deploy log.
 log "Running database migrations (prod)"
-cd apps/api
+{ set +x; } 2>/dev/null
 _db_url="$(grep -E '^DATABASE_URL=' "$PROD_ENV_FILE" | cut -d= -f2-)"
-DATABASE_URL="$_db_url" npx prisma migrate deploy
-log "Regenerating Prisma client"
-DATABASE_URL="$_db_url" npx prisma generate
-cd ../..
+(cd apps/api && DATABASE_URL="$_db_url" npx prisma migrate deploy)
+unset _db_url
+set -x
 
-# ── 10. Copy Prisma generated client ─────────────────────────────────────────
-log "Copying Prisma client"
-mkdir -p apps/api/dist/generated
-cp -r apps/api/src/generated/prisma apps/api/dist/generated/
-
-# ── 11. Restart prod services ─────────────────────────────────────────────────
+# ── 9. Restart prod services ─────────────────────────────────────────────────
 log "Restarting prod services"
 sudo systemctl restart gem-api gem-web
 
-# ── 12. Wait for API to become healthy ────────────────────────────────────────
+# ── 10. Wait for API to become healthy ────────────────────────────────────────
 { set +x; } 2>/dev/null
 log "Waiting for API to become healthy (up to 30s)..."
 _api_healthy=0

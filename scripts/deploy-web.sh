@@ -32,15 +32,24 @@ node --version 2>/dev/null || true
 npm  --version 2>/dev/null || true
 git  log --oneline -5
 
-echo "==> Building API..."
-npm --workspace apps/api run build
+echo "==> Building API (dist-prod)..."
+(cd apps/api && npx prisma generate)
+npm --workspace apps/api run build:prod
+mkdir -p apps/api/dist-prod/generated
+rm -rf apps/api/dist-prod/generated/prisma
+cp -r apps/api/src/generated/prisma apps/api/dist-prod/generated/
 
 echo "==> Restarting gem-api..."
 sudo systemctl restart gem-api
 
-echo "==> Building web..."
-VITE_SENTRY_DSN="$(grep -E '^SENTRY_DSN=' "${_smtp_env}" 2>/dev/null | cut -d= -f2- || true)" \
-  npm --workspace apps/web run build:fast
+# gem-web serves dist-prod, so build there (this used to build into dist/,
+# which nothing serves).
+echo "==> Building web (dist-prod)..."
+VITE_API_BASE_URL="https://api-gem.aidanlenahan.com" \
+  VITE_SOCKET_URL="https://api-gem.aidanlenahan.com" \
+  VITE_SENTRY_DSN="$(grep -E '^SENTRY_DSN=' "${_smtp_env}" 2>/dev/null | cut -d= -f2- | tr -d '\n\r ' || true)" \
+  npm --workspace apps/web run build:fast -- --outDir dist-prod
+find apps/web/dist-prod -name '*.map' -type f -delete
 
 echo "==> Restarting gem-web..."
 sudo systemctl restart gem-web

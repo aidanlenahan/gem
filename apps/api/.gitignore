@@ -5,3 +5,6 @@ dist
 .env
 
 /src/generated/prisma
+dist-prod
+dist-dev
+.tsbuildinfo-*

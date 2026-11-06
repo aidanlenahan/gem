@@ -47,8 +47,17 @@ self.addEventListener('fetch', (event: FetchEvent) => {
 
   const url = new URL(request.url)
 
-  // Keep API and third-party requests network-first to avoid stale private data.
-  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) {
+  // Cross-origin requests (the API on api-gem.*, Sentry ingest, fonts) are left
+  // to the browser untouched. Wrapping them here turned every CORS or network
+  // failure into a synthetic "503 Offline" response, which hid real errors from
+  // the app and from error tracking.
+  if (url.origin !== self.location.origin) {
+    return
+  }
+
+  // Same-origin API proxy (/api/*, used in local dev): network-first so private
+  // data is never served stale.
+  if (url.pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(request).catch(() =>
         caches.match(request).then((cached) =>
